@@ -1,0 +1,8 @@
+ni, TOML
+name = "music-proxy"
+main = "worker.js"
+compatibility_date = "2026-07-16"
+
+[[r2_buckets]]
+binding = "MUSIC"
+bucket_name = "music-bucket"
