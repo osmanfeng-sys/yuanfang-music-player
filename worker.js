@@ -2,6 +2,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const key = url.pathname.substring(1);
+    // 在 worker.js 中修改 env.MUSIC.get(key) 这一行
+    const decodedKey = decodeURIComponent(key); // 将乱码/编码后的路径转回正确格式
+    const object = await env.MUSIC.get(decodedKey);
 
     // 处理预检请求
     if (request.method === "OPTIONS") {
