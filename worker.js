@@ -1,12 +1,10 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const key = url.pathname.substring(1);
-    // 在 worker.js 中修改 env.MUSIC.get(key) 这一行
-    const decodedKey = decodeURIComponent(key); // 将乱码/编码后的路径转回正确格式
-    const object = await env.MUSIC.get(decodedKey);
+    // 统一路径解码，确保包含中文或特殊字符的文件名能正确寻址
+    const decodedKey = decodeURIComponent(url.pathname.substring(1));
 
-    // 处理预检请求
+    // 处理预检请求 (CORS)
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -17,19 +15,20 @@ export default {
       });
     }
 
-    if (!key) {
+    if (!decodedKey) {
       return new Response('Music Server is Running.', { status: 200 });
     }
 
     try {
-      const object = await env.MUSIC.get(key);
+      const object = await env.MUSIC.get(decodedKey);
 
       if (!object) {
         return new Response('File Not Found', { status: 404 });
       }
 
-      const contentType = key.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 
-                          key.endsWith('.ts') ? 'video/MP2T' : 'application/octet-stream';
+      // 根据扩展名设置正确的 MIME 类型
+      const contentType = decodedKey.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 
+                          decodedKey.endsWith('.ts') ? 'video/MP2T' : 'application/octet-stream';
 
       return new Response(object.body, {
         headers: {

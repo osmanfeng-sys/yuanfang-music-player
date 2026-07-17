@@ -2,10 +2,9 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>我的音乐播放器</title>
+    <title>远方音乐播放器</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css">
     <style>
-        /* 深灰色背景，防止刺眼并保证字体清晰 */
         body { 
             background-color: #2c2c2c; 
             display: flex; 
@@ -17,8 +16,8 @@
         #aplayer { 
             width: 90%; 
             max-width: 600px; 
-            background: #3d3d3d; /* 播放器背景 */
-            color: #ffffff;      /* 字体白色 */
+            background: #3d3d3d; 
+            color: #ffffff;      
         }
     </style>
 </head>
@@ -29,66 +28,24 @@
     <script src="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
     
     <script>
-        const ap = new APlayer({
-            container: document.getElementById('aplayer'),
-            autoplay: false,
-            theme: '#1DB954',
-            audio: [
-                // 音乐列表已整合
-                { name: 'Aqua - An Apple a Day', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - An Apple a Day/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Aquarius', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Aquarius/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Aquarius [mqms2]', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Aquarius [mqms2]/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Around The World', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Around The World/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Back From Mars', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Back From Mars/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Back To The 80\'s', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Back To The 80\'s/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Back To The 80\'s [mqms2]', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Back To The 80\'s [mqms2]/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Barbie Girl', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Barbie Girl/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Be A Man', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Be A Man/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Bumble bees', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Bumble bees/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Calling You', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Calling You/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Cartoon heroes', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Cartoon heroes/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Cartoon heroes [mqms2]', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Cartoon heroes [mqms2]/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Cuba Libre', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Cuba Libre/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Doctor Jones', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Doctor Jones/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Freaky Friday', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Freaky Friday/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - good guys', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - good guys/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Good Morning Sunshine', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Good Morning Sunshine/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - goodbye to the circus', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - goodbye to the circus/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Halloween', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Halloween/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Happy Boys & Girls', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Happy Boys & Girls/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - HappyBoysGirls', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - HappyBoysGirls/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Heat Of The Night', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Heat Of The Night/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Jungle song', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Jungle song/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Lollipop', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Lollipop/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - lollipop Candyman', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - lollipop Candyman/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - My Mamma Said', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - My Mamma Said/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - My Oh My', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - My Oh My/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - Roses Are Red', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - Roses Are Red/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - turn back time', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - turn back time/playlist.m3u8', type: 'hls' },
-                { name: 'Aqua - we belong to the sea', url: 'https://music-proxy.osmanfeng.workers.dev/01_AQUA(水叮当)/Aqua - we belong to the sea/playlist.m3u8', type: 'hls' },
-                { name: 'A8 - 慢摇', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/A8 - 慢摇/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 元芳2013神曲 (DJ 良少 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 元芳2013神曲 (DJ 良少 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 冰河时代2', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 冰河时代2/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 冰河时代中文版 [mqms]', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 冰河时代中文版 [mqms]/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 大悲咒 (DJ版) [mqms2]', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 大悲咒 (DJ版) [mqms2]/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 天皇', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 天皇/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 宝贝呀宝贝(DJ 良少 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 宝贝呀宝贝(DJ 良少 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 得到你的人却得不到你的心（DJ）', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 得到你的人却得不到你的心（DJ）/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 我不后悔 [Remix]', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 我不后悔 [Remix]/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 我不后悔(DJ 夜猫Music Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 我不后悔(DJ 夜猫Music Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 火花', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 火花/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 玩腻', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 玩腻/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 逃爱 (DJ 夜猫Music Remix) [mqms2]', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 逃爱 (DJ 夜猫Music Remix) [mqms2]/playlist.m3u8', type: 'hls' },
-                { name: 'DJ - 逃爱(DJ 夜猫Music Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ - 逃爱(DJ 夜猫Music Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 何鹏 - 天蓝蓝 (DJ版)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 何鹏 - 天蓝蓝 (DJ版)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 何鹏 - 宝贝我来给你爱 (DJ 何鹏 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 何鹏 - 宝贝我来给你爱 (DJ 何鹏 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 何鹏 - 错过了缘分错过你 (DJ 何鹏 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 何鹏 - 错过了缘分错过你 (DJ 何鹏 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 阿圣 - 好兄弟 (DJ 阿圣 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 阿圣 - 好兄弟 (DJ 阿圣 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 阿圣 - 最美丽的花 (DJ 阿圣 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 阿圣 - 最美丽的花 (DJ 阿圣 Remix)/playlist.m3u8', type: 'hls' },
-                { name: 'DJ 阿远 - 纯真的誓言 (DJ 阿远 Remix)', url: 'https://music-proxy.osmanfeng.workers.dev/02_DJ/DJ 阿远 - 纯真的誓言 (DJ 阿远 Remix)/playlist.m3u8', type: 'hls' }
-                // ... 你可以在此添加剩余的列表项目
-            ]
-        });
+        // 动态获取播放列表
+        fetch('playlist.json')
+            .then(response => {
+                if (!response.ok) throw new Error('Playlist load failed');
+                return response.json();
+            })
+            .then(data => {
+                const ap = new APlayer({
+                    container: document.getElementById('aplayer'),
+                    autoplay: false,
+                    theme: '#1DB954',
+                    audio: data // 从 JSON 动态加载
+                });
+            })
+            .catch(err => {
+                console.error('Error loading playlist:', err);
+                document.getElementById('aplayer').innerHTML = '<p style="text-align:center;">无法加载播放列表，请检查 playlist.json 是否存在。</p>';
+            });
     </script>
 </body>
 </html>
