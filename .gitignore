@@ -1,0 +1,18 @@
+# 依赖包
+node_modules/
+package-lock.json.old
+
+# 系统及编辑器
+.DS_Store
+.vscode/
+.idea/
+
+# Cloudflare 环境
+.wrangler/
+.env
+.env.local
+
+# 日志及构建输出
+*.log
+dist/
+build/

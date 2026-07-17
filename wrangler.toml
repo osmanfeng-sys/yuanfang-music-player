@@ -6,5 +6,5 @@ compatibility_date = "2026-07-16"
 binding = "MUSIC"
 bucket_name = "music-bucket"
 # 增加 pages 部署配置（可选，便于统一管理）
-[pages]
-build_output_dir = "."
+# [pages]
+# build_output_dir = "."
