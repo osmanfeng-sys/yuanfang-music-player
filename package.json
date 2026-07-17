@@ -1,5 +1,18 @@
 {
+  "name": "musicOnline",
+  "version": "1.0.0",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc", 
+    "deploy:ci": "npm run build && aws s3 sync dist/ s3://music-bucket --delete",
+    "check:env": "node -e 'console.log(\"Node version:\", process.version);'"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "npm-run-all": "^4.1.5",
+    "wrangler": "^3.0.0"  // <-- 建议添加此行
   }
 }
