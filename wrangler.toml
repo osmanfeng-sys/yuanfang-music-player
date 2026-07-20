@@ -1,5 +1,5 @@
 name = "music-proxy"
-main = "worker.js"
+main = "worker/dist/worker.js"
 compatibility_date = "2026-07-16"
 
 [[r2_buckets]]

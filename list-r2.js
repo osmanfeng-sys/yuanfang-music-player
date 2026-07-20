@@ -1,12 +1,21 @@
 const { S3Client, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const fs = require('fs');
 
+// ===== 从环境变量读取凭证（从 .env 加载） =====
+const requiredEnvVars = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'];
+for (const v of requiredEnvVars) {
+  if (!process.env[v]) {
+    console.error(`[Error] 缺少环境变量 ${v}。请复制 .env.example 为 .env 并填入凭证。`);
+    process.exit(1);
+  }
+}
+
 const s3 = new S3Client({
   region: "auto",
-  endpoint: "https://d3aaa017897b99e5387bffd8208e3967.r2.cloudflarestorage.com",
+  endpoint: process.env.R2_ENDPOINT,
   credentials: {
-    accessKeyId: "0b1bf533372317c4432ae06ecb5cc4ba",
-    secretAccessKey: "c597197408ed745f1f5c8aaf1f4a5a77f464937e6a6a8a38724721293544b8d6",
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
 });
 

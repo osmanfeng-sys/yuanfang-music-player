@@ -1,51 +1,13 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>远方音乐播放器</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.css">
-    <style>
-        body { 
-            background-color: #2c2c2c; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            margin: 0; 
-        }
-        #aplayer { 
-            width: 90%; 
-            max-width: 600px; 
-            background: #3d3d3d; 
-            color: #ffffff;      
-        }
-    </style>
-</head>
-<body>
-    <div id="aplayer"></div>
-
-    <script src="https://cdn.jsdelivr.net/npm/hls.js/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/aplayer/dist/APlayer.min.js"></script>
-    
-    <script>
-        // 动态获取播放列表
-        fetch('playlist.json')
-            .then(response => {
-                if (!response.ok) throw new Error('Playlist load failed');
-                return response.json();
-            })
-            .then(data => {
-                const ap = new APlayer({
-                    container: document.getElementById('aplayer'),
-                    autoplay: false,
-                    theme: '#1DB954',
-                    audio: data // 从 JSON 动态加载
-                });
-            })
-            .catch(err => {
-                console.error('Error loading playlist:', err);
-                document.getElementById('aplayer').innerHTML = '<p style="text-align:center;">无法加载播放列表，请检查 playlist.json 是否存在。</p>';
-            });
-    </script>
-</body>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>远方音乐</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

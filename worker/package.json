@@ -1,0 +1,14 @@
+{
+  "name": "yuanfang-music-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/worker.js --format=esm --platform=neutral --external:__STATIC_CONTENT_MANIFEST",
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy dist/worker.js --name music-proxy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "esbuild": "^0.24.0"
+  }
+}

@@ -1,26 +1,31 @@
-name: Deploy to Cloudflare Pages
+name: Deploy
 
 on:
   push:
-    branches:
-      - master
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  # ===== 前端 Pages 部署 =====
+  deploy-frontend:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
-    name: Publish to Cloudflare Pages
+    name: Deploy Frontend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build project
+      - name: Build
         run: npm run build
 
       - name: Publish to Cloudflare Pages
@@ -31,5 +36,31 @@ jobs:
           projectName: yuanfang-music-player
           directory: dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: master
-          uri: https://yuanfang-music-player.pages.dev
+          branch: main
+
+  # ===== Worker 部署 =====
+  deploy-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Install & build Worker
+        run: |
+          cd worker
+          npm ci
+          npm run build
+
+      - name: Deploy Worker
+        run: npx wrangler deploy worker/dist/worker.js --name music-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
