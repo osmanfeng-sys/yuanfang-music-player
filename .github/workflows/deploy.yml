@@ -28,14 +28,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Test Worker API
+        run: |
+          echo "=== Worker /list ==="
+          curl -s -w "\nHTTP %{http_code}" https://music-proxy.osmanfeng.workers.dev/list | head -5
+          echo ""
+          echo "=== Worker root ==="
+          curl -s -w "\nHTTP %{http_code}" https://music-proxy.osmanfeng.workers.dev/
+
       - name: Create Pages project (if not exists)
         continue-on-error: true
-        run: npx wrangler pages project create yuanfang-music-player --production-branch main
+        run: npx wrangler pages project create yuanfang-music --production-branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Publish to Cloudflare Pages
-        run: npx wrangler pages deploy dist/ --project-name=yuanfang-music-player --branch main
+        run: npx wrangler pages deploy dist/ --project-name=yuanfang-music --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
