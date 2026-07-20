@@ -28,11 +28,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check Cloudflare account
+        run: npx wrangler whoami
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
       - name: Publish to Cloudflare Pages
         run: npx wrangler pages deploy dist/ --project-name=yuanfang-music-player --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   # ===== Worker 部署 =====
   deploy-worker:
@@ -60,4 +64,3 @@ jobs:
         run: npx wrangler deploy dist/worker.js --name music-proxy --config ../wrangler.toml
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
