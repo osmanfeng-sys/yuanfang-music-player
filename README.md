@@ -198,9 +198,10 @@ yuanfang-music-player/
 │           └── cors.ts            #   OPTIONS 预检请求处理
 │
 ├── scripts/
-│   └── list-r2.cjs                 # R2 扫描脚本（遍历 bucket → 生成 playlist.json）
+│   └── list-r2.cjs                 # R2 扫描脚本（遍历 bucket → 生成 + 自动上传 playlist.json）
 │
-├── playlist.json                  # 音乐索引文件（由 list-r2.js 自动生成）
+├── playlist.json                  # 音乐索引文件（由 list-r2.cjs 自动生成）
+├── .env                           # 环境变量凭证（R2 + Cloudflare 密钥，不提交到 Git）
 ├── worker.js                      # Worker 旧版（JS 版本，保留备份）
 │
 └── .github/
@@ -256,7 +257,7 @@ CLOUDFLARE_API_TOKEN=your_api_token_here
 CLOUDFLARE_ACCOUNT_ID=your_account_id_here
 ```
 
-> **⚠️ 安全提示**：`.env` 文件已包含在 `.gitignore` 中，切勿提交到 Git。
+> **⚠️ 安全提示**：`.env` 文件已包含在 `.gitignore` 中，切勿提交到 Git。R2 凭证（`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`）用于脚本扫描存储桶，Cloudflare API Token（`CLOUDFLARE_API_TOKEN`）用于 wrangler 部署。
 
 ### 3. 配置 R2 Bucket
 
@@ -359,7 +360,7 @@ npm run dev
 | `npm run dev` | 启动 Vite 开发服务器（端口 3000，HMR 热更新） |
 | `npm run build` | TypeScript 类型检查 + Vite 生产构建 → `dist/` |
 | `npm run preview` | 本地预览生产构建产物 |
-| `npm run generate:playlist` | 扫描 R2 bucket 生成 `playlist.json` |
+| `npm run generate:playlist` | 扫描 R2 bucket → 生成 `playlist.json` → **自动上传到 R2** |
 | `npm run worker:build` | 用 esbuild 打包 Worker TypeScript 源码 |
 | `npm run worker:dev` | 本地调试 Worker（wrangler dev） |
 | `npm run deploy:pages` | 部署前端到 Cloudflare Pages |
@@ -439,17 +440,19 @@ APlayer 开始播放
 
 ### 方式一：CI/CD 自动部署（推荐）
 
-推送至 `main` 分支后，GitHub Actions 自动完成：
+推送至 `main` 分支后，GitHub Actions 自动完成（**前后端串行部署**，避免限流）：
 
 1. **前端**：`npm ci` → `npm run build` → Cloudflare Pages 部署
-2. **Worker**：构建 → `wrangler deploy`
+2. **Worker**（等前端完成）：构建 → `wrangler deploy`
 
 GitHub Secrets 需要配置：
 
 | Secret | 说明 |
 |--------|------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌（需有 Pages + Worker + R2 权限） |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌（需有 **Workers** + **Pages** + **R2** 编辑权限） |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
+
+> ⚠️ `CLOUDFLARE_API_TOKEN` 需要在 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) 中创建，权限至少包含 Workers Edit + Pages Edit。Token 创建后添加到 [GitHub Secrets](https://github.com/osmanfeng-sys/yuanfang-music-player/settings/secrets/actions)。
 
 默认的 workflow 文件在 `.github/workflows/deploy.yml`。
 
@@ -560,11 +563,23 @@ npm run test:watch
 ```
 
 ### Q: 如何更新音乐库？
-**A**: 在 R2 bucket 中添加/删除音乐文件后，重新运行 `npm run generate:playlist` 并部署新的 `playlist.json` 和 Worker：
+**A**: 在 R2 bucket 中添加/删除音乐文件后，运行一条命令即可：
 ```bash
 npm run generate:playlist
+```
+这会**自动完成**三步：扫描 R2 全部曲目 → 生成 `playlist.json` → **自动上传到 R2 覆盖旧文件**。无需手动上传。部署 Worker 后生效：
+```bash
 npm run deploy:worker
 ```
+
+### Q: 艺人卡片没有图片，只有默认图标？
+**A**: 当前版本使用 SVG 绘制的默认艺人头像（绿色渐变背景 + 音符+人形图标）。未来版本会支持艺人自定义封面，存储在 R2 中自动显示。
+
+### Q: 进度条不能拖动？
+**A**: 这是项目初期的 CSS 覆盖问题。如果进度条无法拖动，检查 `src/components/player/MusicPlayer.vue` 中有没有 `cursor: pointer` 相关的样式被覆盖。最新代码已修复此问题。
+
+### Q: `npm run generate:playlist` 报 `require is not defined`？
+**A**: `package.json` 中设置了 `"type": "module"`，导致 `.js` 文件被当作 ES Module 处理。脚本已重命名为 `list-r2.cjs` 解决。如果本地有旧文件，请删除 `list-r2.js`。
 
 ---
 
@@ -578,6 +593,28 @@ npm run deploy:worker
 - [ ] **专辑浏览**：按专辑分类展示曲目
 - [ ] **键盘快捷键**：空格播放/暂停、方向键切歌
 - [ ] **更多音质选择**：支持多码率 HLS 切换
+
+---
+
+## 📋 最近更新记录
+
+### 2026-07-21 — 播放器修复 + 自定义域名 + 郑源精选
+
+| 类别 | 改动 | 说明 |
+|------|------|------|
+| 🐛 **播放器修复** | `AbortError` 竞态 | 新增 `_ignorePause` 标志，队列重建时忽略 APlayer 内部 pause 事件 |
+| 🐛 **播放器修复** | 进度条拖动 | 修复 CSS `cursor: pointer`，thumb 增加放大效果 |
+| 🐛 **播放器修复** | 上一曲/下一曲 | `next()`/`prev()` 改用 APlayer 原生 `skipForward()`/`skipBack()` |
+| 🐛 **播放器修复** | `Hls is not defined` | 挂载 `window.Hls = Hls` 供 APlayer 内部引用 |
+| 🐛 **Worker 修复** | `output000.ts 404` | URL 分段编码避免 `%2F` 问题 |
+| 🐛 **Worker 修复** | Worker 不响应 | 更新 `compatibility_date` 为 `2026-07-21` |
+| 🐛 **脚本修复** | `require is not defined` | `list-r2.js` → `list-r2.cjs` |
+| 🌏 **中国大陆访问** | 自定义域名 | API 改用 `api.yuanfangorganics.ccwu.cc`，绕过 workers.dev 封锁 |
+| 🔄 **一键更新** | 自动上传 R2 | `npm run generate:playlist` 扫描 → 生成 → 自动上传 R2 |
+| 🤖 **CI/CD** | 前后端串行部署 | 改为 `needs: deploy-frontend` 按序执行，避免限流 |
+| 🎤 **郑源精选** | 首页默认歌单 | 首页新增郑源精选板块（15 首歌）+ "播放全部"按钮 |
+| 🎨 **艺人头像** | 默认 SVG 图标 | 绿色渐变 + 音符 + 人形，替换灰色剪影 |
+| 📋 **项目计划** | 新增 3 个 Phase | 歌词支持、云端播放列表、移动端优化 |
 
 ---
 
