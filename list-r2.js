@@ -40,7 +40,8 @@ async function generatePlaylist() {
           .filter(item => item.Key.endsWith('playlist.m3u8'))
           .map(item => ({
             name: item.Key.split('/').slice(-2, -1)[0],
-            url: `https://music-proxy.osmanfeng.workers.dev/${encodeURIComponent(item.Key)}`,
+            // 分段编码，保留真实 / 路径分隔符（否则 hls.js 无法解析相对路径）
+            url: `https://music-proxy.osmanfeng.workers.dev/${item.Key.split('/').map(encodeURIComponent).join('/')}`,
             type: 'hls'
           }));
         allTracks.push(...filtered);
