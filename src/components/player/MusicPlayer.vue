@@ -11,7 +11,6 @@ const playerStore = usePlayerStore()
 const playerContainer = ref<HTMLDivElement>()
 
 /** Hls 实例引用（用于销毁） */
-let hlsInstance: any = null
 
 // ===== APlayer 配置 =====
 const APLAYER_CONFIG = {
@@ -26,45 +25,6 @@ const APLAYER_CONFIG = {
   listFolded: true,
   listMaxHeight: '250px',
   audio: [] as any[]
-}
-
-/**
- * 初始化 HLS：检测 .m3u8 URL，创建 Hls.js 实例挂载到 audio 元素。
- * Safari 原生支持 HLS，跳过 hls.js。
- * HLS 就绪后如果 store 要求播放，自动恢复播放。
- */
-function setupHls(audio: HTMLAudioElement, url: string) {
-  // 销毁旧实例
-  if (hlsInstance) {
-    hlsInstance.destroy()
-    hlsInstance = null
-  }
-
-  if (!url.endsWith('.m3u8')) return
-
-  // Safari 原生支持 HLS
-  if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-    audio.src = url
-    return
-  }
-
-  // 动态导入 hls.js（code splitting）
-  import('hls.js').then(({ default: Hls }) => {
-    if (Hls.isSupported()) {
-      hlsInstance = new Hls()
-      hlsInstance.loadSource(url)
-      hlsInstance.attachMedia(audio)
-
-      // HLS manifest 加载完毕后，如果 store 标记为播放中则恢复播放
-      hlsInstance.on('hlsManifestParsed', () => {
-        if (playerStore.isPlaying && audio.paused) {
-          audio.play().catch(() => {
-            // 浏览器自动播放策略拦截，静默
-          })
-        }
-      })
-    }
-  })
 }
 
 /**
@@ -109,7 +69,6 @@ onMounted(() => {
   })
 
   // 曲目切换事件 → 获取时长信息
-  // APlayer 已内置 HLS 支持（通过 type: 'hls'），不再需要自定义 setupHls
   ap.on('listswitch', () => {
     nextTick(() => {
       setTimeout(() => {
@@ -204,10 +163,6 @@ watch(
 )
 
 onUnmounted(() => {
-  if (hlsInstance) {
-    hlsInstance.destroy()
-    hlsInstance = null
-  }
   if (ap) {
     ap.destroy()
     ap = null
