@@ -3,7 +3,11 @@ import { ref, onMounted, watch, onUnmounted, nextTick } from 'vue'
 import { usePlayerStore } from '@/stores/player'
 import APlayer from 'aplayer'
 import 'aplayer/dist/APlayer.min.css'
+import Hls from 'hls.js'
 import type { PlayMode } from '@/types'
+
+// APlayer 内部通过全局 `Hls` 变量引用 hls.js，需要显式挂载
+;(window as any).Hls = Hls
 
 const playerStore = usePlayerStore()
 
