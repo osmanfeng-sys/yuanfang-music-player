@@ -101,12 +101,13 @@ onMounted(() => {
 
 // --- store → APlayer ---
 
-// 监听播放队列（immediate 确保挂载时已有队列也能加载）
+// 监听播放队列
+// 注意：ap.list.add() 在列表为空时会自动调用 switch(0)，
+// 无需额外调用 switch()，否则会导致 hls.js 重复初始化。
 watch(
   () => playerStore.queue,
   (tracks) => {
     if (!ap) return
-    // 重建 APlayer 列表
     ap.list.clear()
     if (tracks.length > 0) {
       const audioList = tracks.map((t) => ({
@@ -117,29 +118,35 @@ watch(
         type: 'hls'
       }))
       ap.list.add(audioList)
-      ap.list.switch(playerStore.currentIndex)
+      // add() 已在内部调用 switch()，不再重复调
     }
   },
   { deep: true, immediate: true }
 )
 
-// 监听当前索引
+// 监听当前索引（仅响应 next/prev 操作，不立即执行）
 watch(
   () => playerStore.currentIndex,
   (index) => {
     if (ap) {
       ap.list.switch(index)
     }
-  },
-  { immediate: true }
+  }
 )
 
-// 监听播放/暂停
+// 监听播放/暂停（延迟执行以避免 APlayer 内部状态竞态）
 watch(
   () => playerStore.isPlaying,
   (playing) => {
-    if (ap) {
-      playing ? ap.play() : ap.pause()
+    if (!ap) return
+    if (playing) {
+      nextTick(() => {
+        if (ap && playerStore.isPlaying) {
+          ap.play()
+        }
+      })
+    } else {
+      ap.pause()
     }
   },
   { immediate: true }
