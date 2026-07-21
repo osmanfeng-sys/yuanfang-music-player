@@ -108,16 +108,14 @@ onMounted(() => {
     playerStore.next()
   })
 
-  // 曲目切换事件 → 初始化 HLS
+  // 曲目切换事件 → 获取时长信息
+  // APlayer 已内置 HLS 支持（通过 type: 'hls'），不再需要自定义 setupHls
   ap.on('listswitch', () => {
     nextTick(() => {
-      // 等待 APlayer 更新 audio 元素的 src
       setTimeout(() => {
         const audio = getAudioElement()
         const current = playerStore.currentTrack
         if (audio && current) {
-          setupHls(audio, current.url)
-          // 时长信息从 audio 获取
           const updateDuration = () => {
             if (audio.duration && isFinite(audio.duration)) {
               playerStore.updateDuration(audio.duration)
@@ -152,7 +150,8 @@ watch(
         name: t.title,
         artist: t.artist,
         url: t.url,
-        cover: t.cover || ''
+        cover: t.cover || '',
+        type: 'hls'
       }))
       ap.list.add(audioList)
       ap.list.switch(playerStore.currentIndex)
