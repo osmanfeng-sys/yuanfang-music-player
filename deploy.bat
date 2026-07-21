@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 :: --- 变量配置 ---
 set PROJECT_NAME=yuanfang-music
 set WORKER_NAME=music-proxy
-set LIST_SCRIPT=list-r2.js
+set LIST_SCRIPT=list-r2.cjs
 
 echo ╔═════════════════════════════════════╗
 echo ║   远方音乐播放器 — 一键部署脚本      ║

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "generate:playlist": "node list-r2.js",
+    "generate:playlist": "node list-r2.cjs",
     "deploy:pages": "wrangler pages deploy . --project-name=yuanfang-music",
     "deploy:worker": "npm run worker:build && wrangler deploy worker/dist/worker.js --name music-proxy",
     "deploy:local": "powershell -File deploy.bat",
