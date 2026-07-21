@@ -108,7 +108,7 @@ echo ╔════════════════════════
 echo ║   ✓ 全部部署完成！                    ║
 echo ║                                      ║
 echo ║   前端: https://%PROJECT_NAME%.pages.dev ║
-echo ║   API:  https://%WORKER_NAME%.osmanfeng.workers.dev ║
+echo ║   API:  https://api.yuanfangorganics.ccwu.cc ║
 echo ╚═════════════════════════════════════╝
 echo.
 echo 提示：自定义域名已配置，前端可通过

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { WORKER_BASE_URL } from '@/utils/constants'
 import type { Track, Artist, Playlist } from '@/types'
 
 export const usePlaylistStore = defineStore('playlist', () => {
@@ -62,7 +63,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     loading.value = true
     error.value = null
     try {
-      const res = await fetch('https://music-proxy.osmanfeng.workers.dev/list')
+      const res = await fetch(`${WORKER_BASE_URL}/list`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const tracks: Track[] = await res.json()
 

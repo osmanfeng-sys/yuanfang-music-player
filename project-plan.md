@@ -1370,18 +1370,293 @@ R2_SECRET_ACCESS_KEY=your_secret_access_key
 | 5 | **中文文件名乱码** | 如 `DJ ����` 等编码 artifacts | 前端 parser 正确处理 UTF-8 |
 | 6 | **用户播放列表数据丢失** | localStorage 清空后列表消失 | 后续 Phase B 实现 Worker + R2 云端同步 |
 
+## Phase 19: 歌词支持 (Lyrics Integration)
+
+### 19.1 歌词文件存储与索引
+
+在 R2 中为每首歌存储对应的 LRC 格式歌词文件，路径约定：
+
+```
+music-bucket/
+├── 艺人A/
+│   └── 歌曲名/
+│       ├── playlist.m3u8
+│       ├── segment-*.ts
+│       └── lyrics.lrc          ← 新增歌词文件
+```
+
+`list-r2.cjs` 扫描时检测 `lyrics.lrc` 文件，将 `lyricsUrl` 写入 `playlist.json`：
+
+```typescript
+interface Track {
+  // ...
+  lyricsUrl?: string   // Worker 代理 URL 指向 lyrics.lrc
+}
+```
+
+### 19.2 歌词解析器 (`src/utils/lyrics.ts`)
+
+```typescript
+export interface LyricLine {
+  time: number    // 毫秒
+  text: string
+}
+
+export function parseLRC(lrcText: string): LyricLine[] {
+  // 解析 [mm:ss.xx] 格式的时间轴
+  // 按时间排序，过滤空行
+  // 返回有序的歌词行数组
+}
+```
+
+### 19.3 歌词面板组件 (`LyricsPanel.vue`)
+
+已有组件骨架，需完善：
+
+| 功能 | 状态 |
+|------|------|
+| 从 `track.lyricsUrl` 加载 LRC 文件 | ⬜ 待实现 |
+| `parseLRC()` 解析歌词文本 | ⬜ 需实现 `src/utils/lyrics.ts` |
+| 根据 `currentTime` 高亮当前行 | ⬜ 待完善 |
+| 自动滚动的当前行 | ⬜ 待完善 |
+| 无歌词时的空状态显示 | ⬜ 待完善 |
+
+### 19.4 集成到播放器
+
+```
+MusicPlayer.vue
+  ↓ 监听 timeupdate
+LyricsPanel.vue
+  ↓ 通过 props 接收 currentTime + lyricsUrl
+  ↓ 高亮 + 滚动
+```
+
+### 19.5 歌词上传工具
+
+创建 `scripts/upload-lyrics.cjs`，支持批量上传 LRC 文件到 R2 并更新 `playlist.json`。
+
+---
+
+## Phase 20: 自定义播放列表云端同步
+
+### 20.1 现状
+
+当前播放列表存储在 `localStorage`，清空浏览器数据或更换设备后列表丢失。
+
+### 20.2 Worker API 扩展
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/playlists` | 创建播放列表 |
+| `GET` | `/api/playlists` | 获取用户所有播放列表 |
+| `GET` | `/api/playlists/:id` | 获取单个播放列表详情 |
+| `PUT` | `/api/playlists/:id` | 更新播放列表（名称、描述、曲目） |
+| `DELETE` | `/api/playlists/:id` | 删除播放列表 |
+| `PUT` | `/api/playlists/:id/tracks` | 添加/移除曲目 |
+
+### 20.3 用户标识方案
+
+```typescript
+// 首次访问时生成 UUID 存 localStorage
+const userId = localStorage.getItem('ym:userId') || generateUUID()
+// 后续所有 API 请求通过 Header 携带
+headers: { 'X-User-Id': userId }
+```
+
+### 20.4 数据存储
+
+**Phase A（当前）：** localStorage 前端存储
+
+**Phase B（本次实施）：** Worker + R2 存储
+- R2 Key 格式：`playlists/{userId}/{playlistId}.json`
+- Worker 提供完整 CRUD API
+- 前端通过 API 调用，localStorage 作为离线缓存
+
+### 20.5 数据同步策略
+
+```
+写入: 前端 → API → R2 (同时写入 localStorage 作为缓存)
+读取: 优先从 API 获取 → 失败时降级到 localStorage
+同步: 启动时检测 localStorage 是否有未同步的更改 → 推送到云端
+```
+
+### 20.6 前端 Store 修改
+
+`src/stores/playlist.ts` 中 `createPlaylist` / `updatePlaylist` / `deletePlaylist` 方法增加 API 调用：
+
+```typescript
+async function createPlaylist(name: string, description?: string): Promise<Playlist> {
+  // 1. 调用 POST /api/playlists
+  // 2. 成功后更新本地 store
+  // 3. 失败时降级为 localStorage 存储 + 标记待同步
+}
+```
+
+---
+
+## Phase 21: 移动端体验优化
+
+### 21.1 现状问题
+
+| 问题 | 描述 |
+|------|------|
+| 侧边栏 | 桌面端在 `<768px` 宽度仍占位 280px |
+| 播放器 | APlayer 在手机屏幕上过宽，控制按钮太小 |
+| 字体大小 | 整体偏小，不适合触屏操作 |
+| 触摸事件 | 未针对滑动、长按等手势优化 |
+| PWA | 未支持添加到主屏幕、离线播放 |
+
+### 21.2 响应式布局改进
+
+```css
+/* 断点策略 - Mobile First */
+/* 默认: 手机 (<640px) */
+/* sm: 640px+  - 平板竖屏 */
+/* md: 768px+  - 平板横屏 */
+/* lg: 1024px+ - 桌面 */
+
+/* 移动端隐藏侧边栏，改为底部导航或抽屉 */
+@media (max-width: 767px) {
+  .sidebar { display: none; }
+  .bottom-nav { display: flex; }  /* 底部 TabBar */
+}
+```
+
+### 21.3 布局调整
+
+```
+桌面端:                   移动端:
+┌─────┬──────────────┐   ┌──────────────┐
+│     │  AppHeader    │   │  AppHeader   │
+│     │  (搜索/设置)  │   │  (搜索/设置) │
+│     ├──────────────┤   ├──────────────┤
+│侧边栏│  router-view │   │  router-view │
+│     │  (内容区)     │   │  (全屏内容)  │
+│     │               │   │              │
+├─────┴──────────────┤   ├──────────────┤
+│  AppFooter / 播放器 │   │  播放器迷你条 │
+└────────────────────┘   └──────────────┘
+                          ┌──────────────┐
+                          │  底部导航栏   │
+                          │ 首页 浏览 我的│
+                          └──────────────┘
+```
+
+### 21.4 移动端组件改造
+
+**AppSidebar.vue** — 改为从右侧滑出的 Drawer：
+
+```typescript
+// 全屏遮罩 + 滑动面板
+// 支持触摸滑动关闭
+// 显示当前播放队列 + 播放列表入口
+```
+
+**MusicPlayer.vue** — 增加迷你模式：
+
+```typescript
+// 页面底部固定条：封面缩略图 + 歌名 + 播放/暂停按钮
+// 点击展开全屏播放页
+// 支持锁屏控制（Media Session API）
+```
+
+**PlaylistItem.vue** — 触控优化：
+
+```typescript
+// 增大点击热区（至少 44px）
+// 左滑显示「添加到队列」
+// 右滑显示「收藏」
+```
+
+### 21.5 PWA 支持
+
+```bash
+npm install vite-plugin-pwa -D
+```
+
+```typescript
+// vite.config.ts
+import { VitePWA } from 'vite-plugin-pwa'
+
+plugins: [
+  VitePWA({
+    registerType: 'autoUpdate',
+    manifest: {
+      name: '远方音乐',
+      short_name: '远方音乐',
+      description: '在线 HLS 音乐播放器',
+      theme_color: '#1DB954',
+      icons: [...]
+    }
+  })
+]
+```
+
+### 21.6 性能优化
+
+| 优化项 | 说明 |
+|--------|------|
+| 图片懒加载 | 艺人封面懒加载，IntersectionObserver |
+| 虚拟滚动 | 大播放列表（250+首）使用虚拟滚动 |
+| 代码分包 | 移动端优先加载首屏，APlayer/hls.js 懒加载 |
+| 字体压缩 | 仅保留中文常用字，减少字体文件体积 |
+| Service Worker | 缓存 playlist.json 和静态资源 |
+
+---
+
+## Phase 22: Worker 自定义域名迁移
+
+### 22.1 背景
+
+`*.workers.dev` 域名在中国大陆网络环境下无法直接访问，需绑定自定义域名。
+
+### 22.2 配置步骤
+
+1. 在 Cloudflare Dashboard → Workers & Pages → `music-proxy` → Triggers → Custom Domains
+2. 添加 `api.yuanfangorganics.ccwu.cc`
+3. 更新前端代码中所有 `WORKER_BASE_URL`
+
+### 22.3 受影响文件
+
+| 文件 | 内容 |
+|------|------|
+| `src/utils/constants.ts` | `WORKER_BASE_URL` 常量 |
+| `list-r2.cjs` | `playlist.json` 中的 URL 前缀 |
+| `playlist.json` | 262 条曲目 URL |
+| `vite.config.ts` | 开发代理目标地址 |
+| `src/stores/playlist.ts` | `fetchPlaylists()` 中的硬编码 URL |
+
+---
+
+## Phase 23: Bug 修复记录
+
+### 23.1 播放器 HLS 修复
+
+| 问题 | 原因 | 修复 |
+|------|------|------|
+| 单击不播放 | `PlaylistItem.vue` 使用 `@dblclick` | 改为 `@click` |
+| HLS 无法播放 | APlayer 构建音频列表时未传 `type: 'hls'` | 添加 `type: 'hls'` |
+| `Hls is not defined` | APlayer 内部通过全局 `window.Hls` 引用 hls.js | `(window as any).Hls = Hls` |
+| `output000.ts 404` | `encodeURIComponent` 把 `/` 编码为 `%2F` | `item.Key.split('/').map(encodeURIComponent).join('/')` |
+| Worker 部署失败 | `compatibility_date` 过旧 | 更新到 `2026-07-21` |
+| `list-r2.js` ESM 错误 | `package.json` 含 `"type": "module"` | 重命名为 `.cjs` |
+
 ---
 
 ## 附录：关键参数速查
 
 | 参数 | 值 | 位置 |
 |------|-----|------|
-| Worker URL | `https://music-proxy.osmanfeng.workers.dev` | `src/services/api.ts`, `vite.config.ts` |
+| Worker URL（生产） | `https://api.yuanfangorganics.ccwu.cc` | `src/utils/constants.ts`, `vite.config.ts` |
+| Worker URL（回退） | `https://music-proxy.osmanfeng.workers.dev` | 需 VPN 访问 |
 | R2 bucket | `music-bucket` | `wrangler.toml` |
 | Worker name | `music-proxy` | `wrangler.toml` |
-| Pages project | `yuanfang-music-player` | `.github/workflows/deploy.yml` |
+| Pages 自定义域 | `https://yuanfangorganics.ccwu.cc` | Cloudflare Dashboard |
+| Pages 项目名 | `yuanfang-music` | `.github/workflows/deploy.yml` |
 | Dev port | `3000` | `vite.config.ts` |
 | 主题色 | `#1DB954` | `src/assets/styles/variables.css` |
+| 歌词文件 | `lyrics.lrc` | R2 中与 playlist.m3u8 同级 |
+| 用户标识 | UUID 存 `localStorage('ym:userId')` | Phase 20 实施 |
 | 布局：header | `64px` | `variables.css` |
 | 布局：footer | `80px` | `variables.css` |
 | 布局：sidebar | `280px` | `variables.css` |

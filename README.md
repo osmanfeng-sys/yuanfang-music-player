@@ -198,7 +198,7 @@ yuanfang-music-player/
 │           └── cors.ts            #   OPTIONS 预检请求处理
 │
 ├── scripts/
-│   └── list-r2.js                 # R2 扫描脚本（遍历 bucket → 生成 playlist.json）
+│   └── list-r2.cjs                 # R2 扫描脚本（遍历 bucket → 生成 playlist.json）
 │
 ├── playlist.json                  # 音乐索引文件（由 list-r2.js 自动生成）
 ├── worker.js                      # Worker 旧版（JS 版本，保留备份）
@@ -312,15 +312,19 @@ bucket_name = "music-bucket"   # ← 改为你的 bucket 名称
 前端通过 Worker URL 获取数据。打开 `src/utils/constants.ts`，确认 `WORKER_BASE_URL` 指向你的 Worker：
 
 ```typescript
-export const WORKER_BASE_URL = 'https://music-proxy.你的用户名.workers.dev'
+// 生产环境：使用自定义域名（中国大陆可正常访问）
+export const WORKER_BASE_URL = 'https://api.你的域名.ccwu.cc'
+// 回退地址：https://music-proxy.你的用户名.workers.dev（需 VPN）
 ```
+
+> ⚠️ `*.workers.dev` 域名在中国大陆被网络防火墙屏蔽。如果面向国内用户，请务必给 Worker 绑定自定义域名（如 `api.yourdomain.com`），否则用户需开 VPN 才能听歌。
 
 `vite.config.ts` 中的开发代理也需要同步修改：
 
 ```typescript
 proxy: {
   '/api': {
-    target: 'https://music-proxy.你的用户名.workers.dev',
+    target: 'https://api.你的域名.ccwu.cc',  // ← 改为你的 Worker 自定义域名
     changeOrigin: true
   }
 }
@@ -482,7 +486,11 @@ npm run deploy:local
 | `GET` | `/list` | 获取全部曲目索引 | `Track[]` |
 | `GET` | `/*.m3u8` | 代理 HLS manifest 文件 | `application/vnd.apple.mpegurl` |
 | `GET` | `/*.ts` | 代理 TS 音视频分片 | `video/MP2T` |
+| `GET` | `/api/artists` | 获取艺人列表（预留） | `{ artists: Artist[] }` |
+| `GET` | `/api/search?q=xxx` | 搜索曲目（预留） | `{ results: Track[] }` |
 | `OPTIONS` | `*` | CORS 预检请求 | 204 + CORS headers |
+
+> ⚠️ **中国大陆访问须知**：Worker API 通过 `api.yuanfangorganics.ccwu.cc` 访问（自定义域名），使用 Cloudflare 国内网络节点，无需 VPN。若直接访问 `*.workers.dev` 域名则需 VPN。
 
 ### 数据模型
 
@@ -536,6 +544,15 @@ npm run test:watch
 ### Q: 本地开发时无法获取数据？
 **A**: 确认 `src/utils/constants.ts` 中的 `WORKER_BASE_URL` 指向你的 Worker 地址，且 Worker 已部署并可访问。开发模式下也可以先 run `wrangler dev worker.js` 在本地启动 Worker。
 
+### Q: 在中国大陆必须开 VPN 才能访问？
+**A**: 这是因为 `workers.dev` 域名在中国大陆被网络防火墙屏蔽。项目的 Worker API 默认使用 `*.workers.dev` 域名，导致无法访问。解决方案：
+
+1. **给 Worker 绑定自定义域名**（推荐）：在 Cloudflare Dashboard → Workers & Pages → `music-proxy` → Triggers → Custom Domains，添加 `api.yuanfangorganics.ccwu.cc`（或你域名的子域名）
+2. **更新前端代码**：修改 `src/utils/constants.ts` 中的 `WORKER_BASE_URL` 为自定义域名
+3. **重新生成 `playlist.json`**：`npm run generate:playlist` 并上传到 R2
+
+绑定自定义域名后，Worker API 走 Cloudflare 的国内网络节点，无需 VPN 即可正常访问。
+
 ### Q: 部署后页面白屏 / 404？
 **A**: Cloudflare Pages 是 SPA，需要配置自定义 404 页面指向 `index.html`。在 Pages 项目设置 → 路由中，添加 `/_redirects` 规则：
 ```
@@ -555,12 +572,11 @@ npm run deploy:worker
 
 项目基于 [project-plan.md](./project-plan.md) 已完成 Vue 3 + TypeScript 重构，后续计划：
 
-- [ ] **歌词支持**：从 R2 加载 LRC 歌词文件并同步显示
-- [ ] **云端播放列表**：Worker + R2 存储用户播放列表（跨设备同步）
+- [ ] **歌词同步显示**（Phase 19）：从 R2 加载 LRC 歌词文件，解析时间轴，高亮当前行 + 自动滚动
+- [ ] **自定义播放列表云端同步**（Phase 20）：Worker + R2 存储，跨设备同步，localStorage 离线降级
+- [ ] **移动端体验优化**（Phase 21）：响应式布局重构、底部导航栏、迷你播放器、PWA 支持、触控手势
 - [ ] **专辑浏览**：按专辑分类展示曲目
-- [ ] **播放历史云端同步**：跨设备恢复播放进度
 - [ ] **键盘快捷键**：空格播放/暂停、方向键切歌
-- [ ] **PWA 支持**：离线缓存、桌面图标、后台播放
 - [ ] **更多音质选择**：支持多码率 HLS 切换
 
 ---

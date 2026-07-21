@@ -13,7 +13,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'https://music-proxy.osmanfeng.workers.dev',
+        target: 'https://api.yuanfangorganics.ccwu.cc',
         changeOrigin: true
       }
     }

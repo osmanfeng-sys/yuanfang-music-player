@@ -24,7 +24,7 @@ function onClick() {
   <div
     class="playlist-item"
     :class="{ 'playlist-item--active': isActive }"
-    @dblclick="onClick"
+    @click="onClick"
     role="button"
     tabindex="0"
   >

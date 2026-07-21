@@ -41,7 +41,8 @@ async function generatePlaylist() {
           .map(item => ({
             name: item.Key.split('/').slice(-2, -1)[0],
             // 分段编码，保留真实 / 路径分隔符（否则 hls.js 无法解析相对路径）
-            url: `https://music-proxy.osmanfeng.workers.dev/${item.Key.split('/').map(encodeURIComponent).join('/')}`,
+            // 使用自定义域名（workers.dev 域名在中国大陆被屏蔽）
+            url: `https://api.yuanfangorganics.ccwu.cc/${item.Key.split('/').map(encodeURIComponent).join('/')}`,
             type: 'hls'
           }));
         allTracks.push(...filtered);
