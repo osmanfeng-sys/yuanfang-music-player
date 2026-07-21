@@ -40,6 +40,7 @@ function getAudioElement(): HTMLAudioElement | null {
 // ===== 生命周期 =====
 
 let ap: any = null
+let _ignorePause = false  // 队列重建时忽略 APlayer 的 pause 事件
 
 onMounted(() => {
   if (!playerContainer.value) return
@@ -54,7 +55,12 @@ onMounted(() => {
   // ─── APlayer → Store（同步播放器状态到 Store）───
 
   ap.on('play', () => { playerStore.isPlaying = true })
-  ap.on('pause', () => { playerStore.isPlaying = false })
+
+  ap.on('pause', () => {
+    // 队列重建期间 APlayer 内部会触发 pause，不覆盖 store 状态
+    if (_ignorePause) return
+    playerStore.isPlaying = false
+  })
 
   ap.on('timeupdate', () => {
     if (ap?.audio) {
@@ -102,18 +108,18 @@ onMounted(() => {
 // ─── Store → APlayer（响应 Store 变化控制播放器）───
 
 /**
- * 关键修复：ap.list.clear() 内部会触发 APlayer 的 pause 事件，
- * 导致 store.isPlaying 被错误覆盖为 false。
- * 解决方法：在 clear() 之前保存 isPlaying，add() 之后恢复。
+ * 监听播放队列：重建 APlayer 列表
+ * clear() 内部会触发 APlayer 的 pause 事件，
+ * 用 _ignorePause 防止它覆盖 store.isPlaying
  */
-let _queuedPlaying = false
-
 watch(
   () => playerStore.queue,
   (tracks) => {
     if (!ap) return
-    _queuedPlaying = playerStore.isPlaying
+    const wasPlaying = playerStore.isPlaying
+    _ignorePause = true
     ap.list.clear()
+    _ignorePause = false
     if (tracks.length > 0) {
       const audioList = tracks.map((t) => ({
         name: t.title,
@@ -123,8 +129,7 @@ watch(
         type: 'hls'
       }))
       ap.list.add(audioList)
-      // add() 已在内部 switch 到第 0 首，恢复播放状态
-      if (_queuedPlaying) {
+      if (wasPlaying) {
         ap.play()
       }
     }
@@ -260,6 +265,33 @@ onUnmounted(() => {
 
 .music-player :deep(.aplayer-button path) {
   fill: #fff !important;
+}
+
+/* 进度条可拖动区域 */
+.music-player :deep(.aplayer-bar-wrap) {
+  cursor: pointer !important;
+}
+
+.music-player :deep(.aplayer-bar) {
+  cursor: pointer !important;
+}
+
+.music-player :deep(.aplayer-played) {
+  cursor: pointer !important;
+}
+
+/* 进度条拖动手柄 */
+.music-player :deep(.aplayer-thumb) {
+  cursor: pointer !important;
+  box-shadow: 0 0 4px rgba(0,0,0,0.3) !important;
+}
+
+.music-player :deep(.aplayer-thumb:hover) {
+  transform: scale(1.2) !important;
+}
+
+.music-player :deep(.aplayer-loaded) {
+  cursor: pointer !important;
 }
 
 .music-player :deep(.aplayer-lrc) {
