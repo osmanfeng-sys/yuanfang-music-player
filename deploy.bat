@@ -25,7 +25,7 @@ echo.
 
 :: ─── 步骤 2: 生成并上传音乐索引 ───
 echo [2/6] 扫描 R2 生成音乐索引并上传...
-call node %LIST_SCRIPT%
+call npm run generate:playlist
 if %errorlevel% neq 0 (
     echo [Error] 索引生成失败，请检查 .env 中的 R2 凭证
     pause
