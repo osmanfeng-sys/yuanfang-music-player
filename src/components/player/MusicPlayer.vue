@@ -14,8 +14,6 @@ const playerStore = usePlayerStore()
 /** APlayer 容器 DOM 引用 */
 const playerContainer = ref<HTMLDivElement>()
 
-/** Hls 实例引用（用于销毁） */
-
 // ===== APlayer 配置 =====
 const APLAYER_CONFIG = {
   autoplay: false,
@@ -32,9 +30,7 @@ const APLAYER_CONFIG = {
 }
 
 /**
- * 获取 APlayer 内部的 audio 元素。
- * APlayer 的 DOM 结构：container > .aplayer-body > .aplayer-info > .aplayer-music
- * audio 元素在 container 下直接作为兄弟
+ * 获取 APlayer 内部的 audio 元素
  */
 function getAudioElement(): HTMLAudioElement | null {
   if (!playerContainer.value) return null
@@ -48,16 +44,14 @@ let ap: any = null
 onMounted(() => {
   if (!playerContainer.value) return
 
-  // 创建 APlayer 实例
   ap = new APlayer({
     container: playerContainer.value,
     ...APLAYER_CONFIG
   })
 
-  // 注册到 store
   playerStore.initPlayer(ap)
 
-  // --- APlayer 事件 → store ---
+  // ─── APlayer → Store（同步播放器状态到 Store）───
 
   ap.on('play', () => { playerStore.isPlaying = true })
   ap.on('pause', () => { playerStore.isPlaying = false })
@@ -68,17 +62,23 @@ onMounted(() => {
     }
   })
 
+  // APlayer 已内置 ended → auto-next（loop: 'all'），
+  // 我们只需同步 currentIndex 让 Store 知道当前是第几首
   ap.on('ended', () => {
-    playerStore.next()
+    if (ap) {
+      playerStore.currentIndex = ap.list.index
+    }
   })
 
-  // 曲目切换事件 → 获取时长信息
+  // 曲目切换时：同步索引 + 更新时长
   ap.on('listswitch', () => {
+    if (ap) {
+      playerStore.currentIndex = ap.list.index
+    }
     nextTick(() => {
       setTimeout(() => {
         const audio = getAudioElement()
-        const current = playerStore.currentTrack
-        if (audio && current) {
+        if (audio) {
           const updateDuration = () => {
             if (audio.duration && isFinite(audio.duration)) {
               playerStore.updateDuration(audio.duration)
@@ -99,15 +99,20 @@ onMounted(() => {
   })
 })
 
-// --- store → APlayer ---
+// ─── Store → APlayer（响应 Store 变化控制播放器）───
 
-// 监听播放队列
-// 注意：ap.list.add() 在列表为空时会自动调用 switch(0)，
-// 无需额外调用 switch()，否则会导致 hls.js 重复初始化。
+/**
+ * 关键修复：ap.list.clear() 内部会触发 APlayer 的 pause 事件，
+ * 导致 store.isPlaying 被错误覆盖为 false。
+ * 解决方法：在 clear() 之前保存 isPlaying，add() 之后恢复。
+ */
+let _queuedPlaying = false
+
 watch(
   () => playerStore.queue,
   (tracks) => {
     if (!ap) return
+    _queuedPlaying = playerStore.isPlaying
     ap.list.clear()
     if (tracks.length > 0) {
       const audioList = tracks.map((t) => ({
@@ -118,38 +123,41 @@ watch(
         type: 'hls'
       }))
       ap.list.add(audioList)
-      // add() 已在内部调用 switch()，不再重复调
+      // add() 已在内部 switch 到第 0 首，恢复播放状态
+      if (_queuedPlaying) {
+        ap.play()
+      }
     }
   },
   { deep: true, immediate: true }
 )
 
-// 监听当前索引（仅响应 next/prev 操作，不立即执行）
-watch(
-  () => playerStore.currentIndex,
-  (index) => {
-    if (ap) {
-      ap.list.switch(index)
-    }
-  }
-)
-
-// 监听播放/暂停（延迟执行以避免 APlayer 内部状态竞态）
+// 监听播放/暂停
 watch(
   () => playerStore.isPlaying,
   (playing) => {
     if (!ap) return
     if (playing) {
-      nextTick(() => {
-        if (ap && playerStore.isPlaying) {
-          ap.play()
-        }
-      })
+      ap.play()
     } else {
       ap.pause()
     }
-  },
-  { immediate: true }
+  }
+)
+
+// 监听当前索引（用户通过 next/prev 主动切换时）
+let _switchingIndex = false
+watch(
+  () => playerStore.currentIndex,
+  (index) => {
+    if (!ap || _switchingIndex) return
+    _switchingIndex = true
+    ap.list.switch(index)
+    _switchingIndex = false
+    if (playerStore.isPlaying) {
+      nextTick(() => ap?.play())
+    }
+  }
 )
 
 // 监听音量
@@ -187,7 +195,6 @@ onUnmounted(() => {
 
 <style scoped>
 .music-player {
-  /* APlayer 由外部容器控制尺寸，此处只确保不溢出 */
   width: 100%;
   max-width: 600px;
 }
@@ -259,6 +266,15 @@ onUnmounted(() => {
 
 .music-player :deep(.aplayer-list-cur) {
   background: var(--color-primary) !important;
+}
+
+/* 封面播放按钮颜色修正 */
+.music-player :deep(.aplayer-button) {
+  border-color: rgba(255,255,255,0.8) !important;
+}
+
+.music-player :deep(.aplayer-button path) {
+  fill: #fff !important;
 }
 
 .music-player :deep(.aplayer-lrc) {
