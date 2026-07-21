@@ -54,14 +54,39 @@ const recommended = computed(() => {
   return shuffled.slice(0, 10)
 })
 
+// 郑源精选播放列表
+const zhengYuanPlaylist = computed(() => {
+  return playlistStore.getPlaylistByArtist('郑源')
+})
+const zhengYuanTracks = computed<Track[]>(() => {
+  if (!zhengYuanPlaylist.value) return []
+  return zhengYuanPlaylist.value.trackIds
+    .map((id) => playlistStore.getTrackById(id))
+    .filter((t): t is Track => t !== undefined)
+})
+
 onMounted(loadMusic)
 
 function playTrack(trackId: string) {
   const track = playlistStore.getTrackById(trackId)
   if (track) {
+    // 如果队列中已有这首歌，直接切换播
+    const idx = playerStore.queue.findIndex((t) => t.id === trackId)
+    if (idx !== -1 && playerStore.queue.length > 0) {
+      playerStore.currentIndex = idx
+      playerStore.isPlaying = true
+      return
+    }
+    // 否则重建队列
     playerStore.setQueue([track], 0)
     playerStore.isPlaying = true
   }
+}
+
+function playAll(tracks: Track[]) {
+  if (tracks.length === 0) return
+  playerStore.setQueue(tracks, 0)
+  playerStore.isPlaying = true
 }
 
 function addToQueue(trackId: string) {
@@ -100,12 +125,34 @@ function addToQueue(trackId: string) {
         </div>
       </section>
 
-      <!-- 推荐 -->
+      <!-- 推荐歌曲 -->
       <section class="home__section">
         <h2 class="home__section-title">推荐歌曲</h2>
         <div class="home__track-list">
           <PlaylistItem
             v-for="track in recommended"
+            :key="track.id"
+            :track="track"
+            :index="0"
+            :is-active="playerStore.currentTrack?.id === track.id"
+            @click="playTrack(track.id)"
+            @add-to-playlist="addToQueue(track.id)"
+          />
+        </div>
+      </section>
+
+      <!-- 郑源精选 -->
+      <section v-if="zhengYuanTracks.length > 0" class="home__section">
+        <div class="home__section-header">
+          <h2 class="home__section-title">🎤 郑源精选</h2>
+          <button class="home__play-all-btn" @click="playAll(zhengYuanTracks)">
+            ▶ 播放全部
+          </button>
+        </div>
+        <p class="home__count">{{ zhengYuanTracks.length }} 首曲目</p>
+        <div class="home__track-list">
+          <PlaylistItem
+            v-for="track in zhengYuanTracks"
             :key="track.id"
             :track="track"
             :index="0"
@@ -140,10 +187,32 @@ function addToQueue(trackId: string) {
   margin-bottom: var(--spacing-xl);
 }
 
+.home__section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
 .home__section-title {
   font-size: 1.2rem;
   font-weight: 700;
-  margin-bottom: var(--spacing-md);
+}
+
+.home__play-all-btn {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  padding: 4px 14px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.home__play-all-btn:hover {
+  background: var(--color-primary-hover);
 }
 
 .home__track-list {

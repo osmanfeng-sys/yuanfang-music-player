@@ -145,21 +145,6 @@ watch(
   }
 )
 
-// 监听当前索引（用户通过 next/prev 主动切换时）
-let _switchingIndex = false
-watch(
-  () => playerStore.currentIndex,
-  (index) => {
-    if (!ap || _switchingIndex) return
-    _switchingIndex = true
-    ap.list.switch(index)
-    _switchingIndex = false
-    if (playerStore.isPlaying) {
-      nextTick(() => ap?.play())
-    }
-  }
-)
-
 // 监听音量
 watch(
   () => playerStore.volume,

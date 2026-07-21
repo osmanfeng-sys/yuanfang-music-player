@@ -78,24 +78,14 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function next() {
-    if (queue.value.length === 0) return
-    if (isLastTrack.value) {
-      if (playMode.value === 'list-repeat') {
-        currentIndex.value = 0
-      }
-      // sequential: 停在最后一首
-    } else {
-      currentIndex.value++
+    if (aplayerInstance.value) {
+      aplayerInstance.value.skipForward()
     }
   }
 
   function prev() {
-    if (queue.value.length === 0) return
-    if (isFirstTrack.value) {
-      // 已经是第一首，重新播放
-      currentTime.value = 0
-    } else {
-      currentIndex.value--
+    if (aplayerInstance.value) {
+      aplayerInstance.value.skipBack()
     }
   }
 

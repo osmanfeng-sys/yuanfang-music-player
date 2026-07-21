@@ -45,6 +45,24 @@ export const usePlaylistStore = defineStore('playlist', () => {
     )
   }
 
+  /** 获取艺人名对应的系统播放列表（如"郑源精选"） */
+  function getPlaylistByArtist(artistName: string): Playlist | null {
+    const tracks = Object.values(trackCache.value).filter(
+      (t) => t.artist === artistName
+    )
+    if (tracks.length === 0) return null
+    const id = `artist_${artistName}`
+    return {
+      id,
+      name: `${artistName}精选`,
+      description: `${artistName}的全部歌曲，共 ${tracks.length} 首`,
+      trackIds: tracks.map((t) => t.id),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'system'
+    }
+  }
+
   /** 本地搜索曲目（按标题或艺人名） */
   function searchTracks(query: string): Track[] {
     if (!query.trim()) return []
@@ -158,6 +176,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     getPlaylistById,
     getTrackById,
     getTracksByArtist,
+    getPlaylistByArtist,
     searchTracks,
     // Actions
     fetchPlaylists,
