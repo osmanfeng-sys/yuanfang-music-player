@@ -111,7 +111,8 @@ yuanfang-music-player/
 ├── .eslintrc.cjs                  # ESLint 配置
 ├── .prettierrc                    # Prettier 格式化配置
 ├── wrangler.toml                  # Cloudflare Worker 配置（绑定 R2 bucket）
-├── deploy.bat                     # Windows 一键部署脚本
+├── deploy-code.bat                  # Windows 代码部署脚本（常用）
+├── deploy-music.bat                 # Windows 音乐列表同步脚本
 │
 ├── src/                           # ★ 前端源代码
 │   ├── main.ts                    #   应用入口：挂载 App + Router + Pinia
@@ -365,7 +366,7 @@ npm run dev
 | `npm run worker:dev` | 本地调试 Worker（wrangler dev） |
 | `npm run deploy:pages` | 部署前端到 Cloudflare Pages |
 | `npm run deploy:worker` | 构建并部署 Worker |
-| `npm run deploy:local` | Windows 一键部署（deploy.bat） |
+| `npm run deploy:local` | Windows 一键部署（旧版 deploy.bat） |
 | `npm run lint` | ESLint 检查 + 自动修复 |
 | `npm run format` | Prettier 格式化 |
 | `npm run test` | 运行 Vitest 单元测试 |
@@ -470,13 +471,41 @@ npm run worker:build
 npx wrangler deploy worker/dist/worker.js --name music-proxy
 ```
 
-### 方式三：Windows 一键部署
+### 方式三：Windows 部署脚本（推荐）
 
-```bash
-npm run deploy:local
-```
+项目提供两个拆分脚本，按需使用：
 
-这会依次执行：安装依赖 → 生成索引 → Git 提交推送 → 部署 Pages → 部署 Worker。
+---
+
+**`deploy-code.bat` — 代码部署（最常用）**
+
+当你改了前端/Worker 代码后使用。**不做音乐扫描，快。**
+
+| 步骤 | 执行 | 说明 |
+|------|------|------|
+| 1/4 | `npm install` | 安装前端依赖 |
+| 2/4 | `git add . → commit → pull --rebase → push` | 提交代码到 GitHub |
+| 3/4 | `npm run build → wrangler pages deploy` | 构建前端 → 部署到 Cloudflare Pages |
+| 4/4 | 进 `worker/` → `npm install + build → wrangler deploy` | 构建并部署 Worker |
+
+**什么时候用：** 每次你改完代码，双击它就行。
+
+**注意：** 步骤 2（Git push）会触发 GitHub Actions，Actions 也会自动走一遍部署。所以其实你也可以只 commit + push 到 GitHub，等 CI 自动部署，不需要本地跑 `deploy-code.bat`。
+
+---
+
+**`deploy-music.bat` — 音乐列表同步**
+
+当你在 R2 存储桶里加了新歌/删了歌后使用。**不构建前端，不部署 Worker，速度快。**
+
+| 步骤 | 执行 | 说明 |
+|------|------|------|
+| 1/2 | `npm run generate:playlist` | 扫描 R2 全部音频文件 → 生成 `playlist.json` → 上传回 R2 |
+| 2/2 | `git add playlist.json → commit → push` | 把新的索引提交到 GitHub |
+
+**什么时候用：** 你往 R2 上传了新歌之后双击它。
+
+Git push 之后 GitHub Actions 会自动重新部署前端和 Worker，所以不需要额外操作。
 
 ---
 
@@ -563,14 +592,14 @@ npm run test:watch
 ```
 
 ### Q: 如何更新音乐库？
-**A**: 在 R2 bucket 中添加/删除音乐文件后，运行一条命令即可：
-```bash
-npm run generate:playlist
-```
-这会**自动完成**三步：扫描 R2 全部曲目 → 生成 `playlist.json` → **自动上传到 R2 覆盖旧文件**。无需手动上传。部署 Worker 后生效：
-```bash
-npm run deploy:worker
-```
+**A**: 在 R2 bucket 中添加/删除音乐文件后，二选一：
+- **Windows**：双击 `deploy-music.bat`（扫描 R2 → 生成索引 → 上传 → 推 Git，触发 CI 自动部署）
+- **命令行**：
+  ```bash
+  npm run generate:playlist
+  git add playlist.json && git commit -m "update playlist" && git push
+  ```
+  GitHub Actions 会自动构建 + 部署前端和 Worker。
 
 ### Q: 艺人卡片没有图片，只有默认图标？
 **A**: 当前版本使用 SVG 绘制的默认艺人头像（绿色渐变背景 + 音符+人形图标）。未来版本会支持艺人自定义封面，存储在 R2 中自动显示。
