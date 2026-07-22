@@ -64,10 +64,17 @@ function playAll() {
     <template v-else-if="artist">
       <div class="artist-detail__header">
         <div class="artist-detail__cover">
-          <svg width="160" height="160" viewBox="0 0 64 64" fill="none">
-            <rect width="64" height="64" rx="16" fill="var(--bg-tertiary)" />
-            <circle cx="32" cy="26" r="12" fill="var(--bg-elevated)" />
-            <path d="M20 50c0-6.6 5.4-12 12-12s12 5.4 12 12" stroke="var(--bg-elevated)" stroke-width="3" fill="none" />
+          <svg width="160" height="160" viewBox="0 0 120 120" fill="none">
+            <defs>
+              <linearGradient id="artist-cover" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1DB954"/>
+                <stop offset="100%" stop-color="#148a3c"/>
+              </linearGradient>
+            </defs>
+            <rect width="120" height="120" rx="16" fill="url(#artist-cover)"/>
+            <circle cx="60" cy="52" r="16" fill="rgba(255,255,255,0.2)"/>
+            <path d="M42 86c0-10 8-18 18-18s18 8 18 18" stroke="rgba(255,255,255,0.4)" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <path d="M57 42l18-5v18M57 55l18-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>
           </svg>
         </div>
         <div class="artist-detail__info">

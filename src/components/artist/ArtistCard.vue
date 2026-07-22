@@ -22,15 +22,9 @@ function onClick() {
 <template>
   <div class="artist-card" @click="onClick" role="button" tabindex="0" @keydown.enter="onClick">
     <div class="artist-card__cover">
-      <!-- 默认头像：渐变背景 + 音符图标 -->
+      <!-- 默认头像：绿色背景 + 音符图标 -->
       <svg width="100%" height="100%" viewBox="0 0 120 120" fill="none">
-        <defs>
-          <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#1DB954"/>
-            <stop offset="100%" stop-color="#148a3c"/>
-          </linearGradient>
-        </defs>
-        <rect width="120" height="120" rx="16" fill="url(#abg)"/>
+        <rect width="120" height="120" rx="16" fill="#1DB954"/>
         <circle cx="60" cy="52" r="16" fill="rgba(255,255,255,0.2)"/>
         <path d="M42 86c0-10 8-18 18-18s18 8 18 18" stroke="rgba(255,255,255,0.4)" stroke-width="3.5" fill="none" stroke-linecap="round"/>
         <path d="M57 42l18-5v18M57 55l18-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>

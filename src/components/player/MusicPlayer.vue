@@ -65,6 +65,9 @@ onMounted(() => {
   ap.on('timeupdate', () => {
     if (ap?.audio) {
       playerStore.updateTime(ap.audio.currentTime)
+      if (ap.audio.duration && isFinite(ap.audio.duration)) {
+        playerStore.updateDuration(ap.audio.duration)
+      }
     }
   })
 

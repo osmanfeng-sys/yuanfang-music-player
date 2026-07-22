@@ -1,16 +1,54 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { usePlayerStore } from '@/stores/player'
 import { formatTime } from '@/utils/format'
 import MusicPlayer from '@/components/player/MusicPlayer.vue'
 
 const playerStore = usePlayerStore()
 
-/** 点击进度条跳转 */
-function onProgressClick(e: MouseEvent) {
-  const bar = e.currentTarget as HTMLElement
+/** 进度条拖拽状态 */
+const barRef = ref<HTMLElement>()
+const isDragging = ref(false)
+const isHovering = ref(false)
+
+/** 从鼠标事件计算并跳转进度 */
+function seekFromEvent(e: MouseEvent) {
+  const bar = barRef.value
+  if (!bar) return
   const rect = bar.getBoundingClientRect()
-  const ratio = (e.clientX - rect.left) / rect.width
-  playerStore.seek(ratio * playerStore.duration)
+  let ratio = (e.clientX - rect.left) / rect.width
+  ratio = Math.max(0, Math.min(1, ratio))
+  // 如果 duration 尚未加载（为 0），用 audio 元素实时获取
+  let dur = playerStore.duration
+  if (!dur || !isFinite(dur)) {
+    const audio = document.querySelector('.footer__engine audio') as HTMLAudioElement | null
+    if (audio?.duration && isFinite(audio.duration)) {
+      dur = audio.duration
+      playerStore.updateDuration(dur)
+    }
+  }
+  playerStore.seek(ratio * dur)
+}
+
+function onBarMouseDown(e: MouseEvent) {
+  // 只响应左键
+  if (e.button !== 0) return
+  isDragging.value = true
+  isHovering.value = true
+  seekFromEvent(e)
+  document.addEventListener('mousemove', onBarMouseMove)
+  document.addEventListener('mouseup', onBarMouseUp)
+}
+
+function onBarMouseMove(e: MouseEvent) {
+  if (!isDragging.value) return
+  seekFromEvent(e)
+}
+
+function onBarMouseUp() {
+  isDragging.value = false
+  document.removeEventListener('mousemove', onBarMouseMove)
+  document.removeEventListener('mouseup', onBarMouseUp)
 }
 </script>
 
@@ -67,11 +105,20 @@ function onProgressClick(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="footer__progress" @click="onProgressClick">
+      <div
+        class="footer__progress"
+        @mouseenter="isHovering = true"
+        @mouseleave="isHovering = false"
+      >
         <span class="footer__time">{{ formatTime(playerStore.currentTime) }}</span>
-        <div class="footer__bar">
+        <div class="footer__bar" ref="barRef" @mousedown="onBarMouseDown">
           <div class="footer__bar-track">
             <div class="footer__bar-fill" :style="{ width: `${playerStore.progress * 100}%` }" />
+            <div
+              class="footer__bar-thumb"
+              :class="{ 'footer__bar-thumb--active': isDragging || isHovering }"
+              :style="{ left: `${playerStore.progress * 100}%` }"
+            />
           </div>
         </div>
         <span class="footer__time">{{ formatTime(playerStore.duration) }}</span>
@@ -197,6 +244,8 @@ function onProgressClick(e: MouseEvent) {
   flex: 1;
   display: flex;
   align-items: center;
+  cursor: pointer;
+  padding: 8px 0; /* 扩大点击区域 */
 }
 
 .footer__bar-track {
@@ -204,7 +253,8 @@ function onProgressClick(e: MouseEvent) {
   height: 4px;
   background: var(--bg-tertiary);
   border-radius: 2px;
-  overflow: hidden;
+  position: relative;
+  cursor: pointer;
 }
 
 .footer__bar-fill {
@@ -212,6 +262,23 @@ function onProgressClick(e: MouseEvent) {
   background: var(--color-primary);
   border-radius: 2px;
   transition: width 0.1s linear;
+}
+
+.footer__bar-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  pointer-events: none;
+}
+
+.footer__bar-thumb--active {
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .footer__empty {
