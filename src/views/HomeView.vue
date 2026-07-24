@@ -34,9 +34,6 @@ async function loadMusic() {
   }
 }
 
-// 背景图片 URL（public 目录引用）
-const bgImageUrl = '/PIC/IMG_0776.JPG'
-
 // 最近播放（最多 10 首）
 const recentTracks = computed<Track[]>(() => {
   return userStore.playHistory
@@ -65,8 +62,10 @@ function playTrack(trackId: string) {
 <template>
   <main class="home">
     <!-- 全屏固定背景（永不滚动） -->
-    <div class="home__bg">
-      <img :src="bgImageUrl" alt="" class="home__bg-img" />
+    <div
+      class="home__bg"
+      style="background-image: url('/PIC/IMG_0776.JPG'); background-size: cover; background-position: center;"
+    >
       <div class="home__bg-overlay" />
     </div>
 
@@ -141,20 +140,30 @@ function playTrack(trackId: string) {
 .home__bg {
   position: fixed;
   inset: 0;
-  z-index: -1;
-}
-
-.home__bg-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  z-index: 0;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 .home__bg-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
+}
+
+/* 确保主页内容在背景之上 */
+.home__section,
+.home__equalizer,
+.home__track-info {
+  position: relative;
+  z-index: 1;
+}
+
+/* Loading/Error 状态也在背景之上 */
+.home .spinner,
+.home .error {
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== 通用 Section ===== */
