@@ -34,15 +34,8 @@ async function loadMusic() {
   }
 }
 
-const allTracks = computed(() => playlistStore.allTracks)
-
 // 背景图片 URL（public 目录引用）
 const bgImageUrl = '/PIC/IMG_0776.JPG'
-const totalTracks = computed(() => allTracks.value.length)
-const totalArtists = computed(() => {
-  const names = new Set(allTracks.value.map((t) => t.artist))
-  return names.size
-})
 
 // 最近播放（最多 10 首）
 const recentTracks = computed<Track[]>(() => {
@@ -71,7 +64,7 @@ function playTrack(trackId: string) {
 
 <template>
   <main class="home">
-    <!-- 全屏固定背景 -->
+    <!-- 全屏固定背景（永不滚动） -->
     <div class="home__bg">
       <img :src="bgImageUrl" alt="" class="home__bg-img" />
       <div class="home__bg-overlay" />
@@ -87,50 +80,29 @@ function playTrack(trackId: string) {
     />
 
     <template v-else>
-      <!-- 1. Hero 区域 -->
-      <section class="home__hero">
-        <h1 class="home__hero-title">远方音乐</h1>
-        <p class="home__hero-subtitle">
-          共 {{ totalTracks }} 首曲目 · {{ totalArtists }} 位艺人
-        </p>
-        <router-link to="/browse" class="home__hero-link">
-          浏览全部音乐 →
-        </router-link>
-      </section>
-
-      <!-- 2. 绿色音乐可视化背景（使用自然风景图做底） -->
-      <section class="home__visualizer">
-        <template v-if="!playerStore.currentTrack">
-          <div class="home__visualizer-idle">
-            <svg class="home__visualizer-icon" width="56" height="56" viewBox="0 0 24 24" fill="none">
-              <path d="M9 18V5l12-2v13" stroke="#1DB954" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="6" cy="18" r="3" stroke="#1DB954" stroke-width="1.8"/>
-              <circle cx="18" cy="16" r="3" stroke="#1DB954" stroke-width="1.8"/>
-            </svg>
-            <p class="home__visualizer-text">选择歌曲开始播放</p>
-          </div>
+      <!-- 右侧均衡器（右下角，较矮） -->
+      <div class="home__equalizer">
+        <template v-if="playerStore.currentTrack">
+          <div
+            v-for="i in 16"
+            :key="i"
+            class="home__equalizer-bar"
+            :class="{ 'home__equalizer-bar--playing': playerStore.isPlaying }"
+            :style="{ animationDelay: `${i * 0.10}s` }"
+          />
         </template>
+      </div>
 
-        <template v-else>
-          <div class="home__equalizer">
-            <div
-              v-for="i in 24"
-              :key="i"
-              class="home__equalizer-bar"
-              :class="{ 'home__equalizer-bar--playing': playerStore.isPlaying }"
-              :style="{ animationDelay: `${i * 0.12}s` }"
-            />
-          </div>
-          <div class="home__visualizer-now">
-            <p class="home__visualizer-now-text">
-              <span v-if="!playerStore.isPlaying" class="home__visualizer-paused">⏸ 已暂停 — </span>
-              {{ playerStore.currentTrack.title }} — {{ playerStore.currentTrack.artist }}
-            </p>
-          </div>
-        </template>
-      </section>
+      <!-- 底部歌曲信息 -->
+      <div v-if="playerStore.currentTrack" class="home__track-info">
+        <span v-if="!playerStore.isPlaying" class="home__paused">⏸ </span>
+        {{ playerStore.currentTrack.title }} — {{ playerStore.currentTrack.artist }}
+      </div>
+      <div v-else class="home__track-info home__track-info--idle">
+        选择歌曲开始播放
+      </div>
 
-      <!-- 3. 最近播放 -->
+      <!-- 最近播放 -->
       <section v-if="recentTracks.length > 0" class="home__section">
         <h2 class="home__section-title">最近播放</h2>
         <div class="home__recent-scroll">
@@ -165,7 +137,7 @@ function playTrack(trackId: string) {
   min-height: calc(100vh - var(--header-height) - var(--footer-height) - var(--spacing-lg) * 2);
 }
 
-/* ===== 全屏固定背景 ===== */
+/* ===== 全屏固定背景（占用整个视口，不跟随滚动） ===== */
 .home__bg {
   position: fixed;
   inset: 0;
@@ -176,7 +148,6 @@ function playTrack(trackId: string) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
   display: block;
 }
 
@@ -184,39 +155,6 @@ function playTrack(trackId: string) {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-}
-
-/* ===== Hero 区域 ===== */
-.home__hero {
-  text-align: center;
-  padding: var(--spacing-xl) 0 var(--spacing-lg);
-  margin-bottom: var(--spacing-xl);
-}
-
-.home__hero-title {
-  font-size: 2rem;
-  font-weight: 800;
-  margin: 0 0 var(--spacing-sm);
-  letter-spacing: -0.02em;
-}
-
-.home__hero-subtitle {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  margin: 0 0 var(--spacing-md);
-}
-
-.home__hero-link {
-  display: inline-block;
-  color: var(--color-primary);
-  font-size: 0.9rem;
-  font-weight: 600;
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.home__hero-link:hover {
-  color: var(--color-primary-hover);
 }
 
 /* ===== 通用 Section ===== */
@@ -230,94 +168,62 @@ function playTrack(trackId: string) {
   margin: 0 0 var(--spacing-md);
 }
 
-/* ===== 绿色音乐可视化 ===== */
-.home__visualizer {
-  position: relative;
-  height: 350px;
-  margin-bottom: var(--spacing-xl);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-/* 空闲状态 */
-.home__visualizer-idle {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-md);
-  position: relative;
-  z-index: 1;
-}
-
-.home__visualizer-icon {
-  opacity: 0.55;
-}
-
-.home__visualizer-text {
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-}
-
-/* 均衡器柱条 */
+/* ===== 右下角均衡器（较小、较矮） ===== */
 .home__equalizer {
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  bottom: calc(var(--footer-height) + 12px);
+  right: var(--spacing-md);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 var(--spacing-lg);
-  z-index: 1;
+  align-items: flex-end;
+  gap: 3px;
+  z-index: 50;
+  height: 36px;
 }
 
 .home__equalizer-bar {
-  width: 8px;
-  height: 20%;
-  border-radius: 4px;
+  width: 4px;
+  height: 6px;
+  border-radius: 2px;
   background: #1DB954;
-  box-shadow: 0 0 12px rgba(29, 185, 84, 0.7);
-  transition: height 0.3s ease;
+  box-shadow: 0 0 6px rgba(29, 185, 84, 0.6);
+  transition: height 0.2s ease;
 }
 
 .home__equalizer-bar--playing {
-  animation: equalizer 1.2s ease-in-out infinite;
+  animation: equalizer 0.9s ease-in-out infinite;
 }
 
 @keyframes equalizer {
-  0%, 100% { height: 15%; }
-  20% { height: 60%; }
-  40% { height: 30%; }
-  60% { height: 80%; }
-  80% { height: 45%; }
+  0%, 100% { height: 6px; }
+  25% { height: 24px; }
+  50% { height: 14px; }
+  75% { height: 32px; }
 }
 
-/* 底部当前播放文字 */
-.home__visualizer-now {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: var(--spacing-md) var(--spacing-lg);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+/* ===== 底部歌曲信息（固定在最底） ===== */
+.home__track-info {
+  position: fixed;
+  bottom: calc(var(--footer-height) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+  white-space: nowrap;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
-  z-index: 1;
 }
 
-.home__visualizer-now-text {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-primary);
+.home__track-info--idle {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
 }
 
-.home__visualizer-paused {
-  color: var(--text-secondary);
+.home__paused {
+  opacity: 0.6;
 }
 
 /* ===== 最近播放横向滚动 ===== */
