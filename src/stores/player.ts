@@ -27,6 +27,12 @@ export const usePlayerStore = defineStore('player', () => {
   /** APlayer 实例（由 MusicPlayer 组件挂载后设置） */
   const aplayerInstance = ref<any>(null)
 
+  /** next/prev 播放防抖计时器 */
+  let _playTimer: ReturnType<typeof setTimeout> | null = null
+  function _cancelPlayTimer() {
+    if (_playTimer) { clearTimeout(_playTimer); _playTimer = null }
+  }
+
   // ===== Getters =====
 
   /** 当前播放曲目 */
@@ -83,6 +89,16 @@ export const usePlayerStore = defineStore('player', () => {
     if (total <= 1) return
     const nextIdx = (currentIndex.value + 1) % total
     aplayerInstance.value.list.switch(nextIdx)
+    // 切换后等 HLS 初始化再播放
+    if (isPlaying.value) {
+      _cancelPlayTimer()
+      _playTimer = setTimeout(() => {
+        if (aplayerInstance.value) {
+          aplayerInstance.value.play()
+        }
+        _playTimer = null
+      }, 250)
+    }
   }
 
   function prev() {
@@ -91,6 +107,16 @@ export const usePlayerStore = defineStore('player', () => {
     if (total <= 1) return
     const prevIdx = (currentIndex.value - 1 + total) % total
     aplayerInstance.value.list.switch(prevIdx)
+    // 切换后等 HLS 初始化再播放
+    if (isPlaying.value) {
+      _cancelPlayTimer()
+      _playTimer = setTimeout(() => {
+        if (aplayerInstance.value) {
+          aplayerInstance.value.play()
+        }
+        _playTimer = null
+      }, 250)
+    }
   }
 
   function seek(time: number) {
