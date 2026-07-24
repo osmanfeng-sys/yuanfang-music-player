@@ -52,6 +52,7 @@ function playTrack(trackId: string) {
     const existingIdx = playerStore.queue.findIndex(t => t.id === trackId)
     if (existingIdx !== -1 && playerStore.queue.length > 0) {
       playerStore.currentIndex = existingIdx
+      playerStore.aplayerInstance?.list.switch(existingIdx)
       playerStore.isPlaying = true
       return
     }

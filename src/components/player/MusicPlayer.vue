@@ -119,7 +119,7 @@ watch(
   () => playerStore.queue,
   (tracks) => {
     if (!ap) return
-    const wasPlaying = playerStore.isPlaying
+    const shouldPlay = playerStore.isPlaying
     const targetIdx = playerStore.currentIndex
     _ignorePause = true
     ap.list.clear()
@@ -137,8 +137,13 @@ watch(
       if (targetIdx >= 0 && targetIdx < tracks.length) {
         ap.list.switch(targetIdx)
       }
-      if (wasPlaying) {
-        ap.play()
+      // 需要播放时，延迟一小段时间等 HLS 初始化完成
+      if (shouldPlay) {
+        nextTick().then(() => {
+          setTimeout(() => {
+            if (ap) ap.play()
+          }, 200)
+        })
       }
     }
   },
