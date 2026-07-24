@@ -6,6 +6,7 @@ import { useUserStore } from '@/stores/user'
 import { fetchAllTracks } from '@/services/music'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
+import { formatTime } from '@/utils/format'
 import type { Track } from '@/types'
 
 const playlistStore = usePlaylistStore()
@@ -34,6 +35,8 @@ async function loadMusic() {
   }
 }
 
+const allTracks = computed(() => playlistStore.allTracks)
+
 // 最近播放（最多 10 首）
 const recentTracks = computed<Track[]>(() => {
   return userStore.playHistory
@@ -48,12 +51,13 @@ function playTrack(trackId: string) {
   const all = playlistStore.allTracks
   const idx = all.findIndex(t => t.id === trackId)
   if (idx !== -1) {
-    // 如果已在当前队列中，直接切换
     const existingIdx = playerStore.queue.findIndex(t => t.id === trackId)
     if (existingIdx !== -1 && playerStore.queue.length > 0) {
       playerStore.currentIndex = existingIdx
+      playerStore.ignorePause = true
       playerStore.aplayerInstance?.list.switch(existingIdx)
       playerStore.isPlaying = true
+      setTimeout(() => { playerStore.ignorePause = false }, 600)
       return
     }
     playerStore.setQueue(all, idx)
@@ -125,6 +129,30 @@ function playTrack(trackId: string) {
           </div>
         </div>
       </section>
+
+      <!-- 手机端快捷点歌（仅在无最近播放且无当前曲目时显示） -->
+      <section
+        v-if="recentTracks.length === 0 && !playerStore.currentTrack && allTracks.length > 0"
+        class="home__section home__quick-mobile"
+      >
+        <h2 class="home__section-title">点歌台</h2>
+        <div class="home__mobile-list">
+          <div
+            v-for="(track, idx) in allTracks.slice(0, 15)"
+            :key="track.id"
+            class="home__mobile-item"
+            @click="playTrack(track.id)"
+          >
+            <span class="home__mobile-idx">{{ idx + 1 }}</span>
+            <span class="home__mobile-info">
+              <span class="home__mobile-title">{{ track.title }}</span>
+              <span class="home__mobile-artist">{{ track.artist }}</span>
+            </span>
+            <span class="home__mobile-dur">{{ formatTime(track.duration ?? 0) }}</span>
+          </div>
+        </div>
+        <div class="home__mobile-hint">← 点击左侧导航按钮可查看完整艺人列表</div>
+      </section>
     </template>
   </main>
 </template>
@@ -139,7 +167,7 @@ function playTrack(trackId: string) {
   min-height: calc(100vh - var(--header-height) - var(--footer-height) - var(--spacing-lg) * 2);
 }
 
-/* ===== 全屏固定背景（占用整个视口，不跟随滚动） ===== */
+/* ===== 全屏固定背景 ===== */
 .home__bg {
   position: fixed;
   inset: 0;
@@ -154,7 +182,6 @@ function playTrack(trackId: string) {
   background: rgba(0, 0, 0, 0.45);
 }
 
-/* 确保主页内容在背景之上 */
 .home__section,
 .home__equalizer,
 .home__track-info {
@@ -162,7 +189,6 @@ function playTrack(trackId: string) {
   z-index: 1;
 }
 
-/* Loading/Error 状态也在背景之上 */
 .home .spinner,
 .home .error {
   position: relative;
@@ -180,7 +206,7 @@ function playTrack(trackId: string) {
   margin: 0 0 var(--spacing-md);
 }
 
-/* ===== 右下角均衡器（较小、较矮） ===== */
+/* ===== 右下角均衡器 ===== */
 .home__equalizer {
   position: fixed;
   bottom: calc(var(--footer-height) + 12px);
@@ -212,7 +238,7 @@ function playTrack(trackId: string) {
   75% { height: 32px; }
 }
 
-/* ===== 底部歌曲信息（固定在最底） ===== */
+/* ===== 底部歌曲信息 ===== */
 .home__track-info {
   position: fixed;
   bottom: calc(var(--footer-height) + 8px);
@@ -309,5 +335,86 @@ function playTrack(trackId: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+}
+
+/* ===== 手机端快捷点歌 ===== */
+.home__quick-mobile {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .home__quick-mobile {
+    display: block;
+  }
+}
+
+.home__mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home__mobile-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 10px var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.home__mobile-item:hover {
+  background: rgba(40, 40, 40, 0.85);
+}
+
+.home__mobile-item:active {
+  background: rgba(29, 185, 84, 0.15);
+}
+
+.home__mobile-idx {
+  width: 20px;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.home__mobile-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home__mobile-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__mobile-artist {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__mobile-dur {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.home__mobile-hint {
+  margin-top: var(--spacing-sm);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-align: center;
 }
 </style>

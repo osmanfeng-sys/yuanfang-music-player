@@ -57,8 +57,8 @@ onMounted(() => {
   ap.on('play', () => { playerStore.isPlaying = true })
 
   ap.on('pause', () => {
-    // 队列重建期间 APlayer 内部会触发 pause，不覆盖 store 状态
-    if (_ignorePause) return
+    // 队列重建或 next/prev 切换期间忽略 pause，防止闪烁
+    if (_ignorePause || playerStore.ignorePause) return
     playerStore.isPlaying = false
   })
 
@@ -71,20 +71,30 @@ onMounted(() => {
     }
   })
 
-  // APlayer 已内置 ended → auto-next（loop: 'all'），
-  // 我们只需同步 currentIndex 让 Store 知道当前是第几首
   ap.on('ended', () => {
     if (ap) {
       playerStore.currentIndex = ap.list.index
     }
   })
 
-  // 曲目切换时：同步索引 + 更新时长
+  // 曲目切换时：同步索引 + 自动继续播放 + 更新时长
   ap.on('listswitch', () => {
     if (ap) {
       playerStore.currentIndex = ap.list.index
     }
     nextTick(() => {
+      // 自动播放（处理 next/prev 场景：切换后继续播放）
+      setTimeout(() => {
+        if (playerStore.isPlaying && ap) {
+          ap.play().catch(() => {
+            // HLS 可能还未就绪，重试一次
+            setTimeout(() => {
+              if (playerStore.isPlaying && ap) ap.play().catch(() => {})
+            }, 500)
+          })
+        }
+      }, 250)
+      // 更新时长
       setTimeout(() => {
         const audio = getAudioElement()
         if (audio) {
@@ -112,8 +122,6 @@ onMounted(() => {
 
 /**
  * 监听播放队列：重建 APlayer 列表
- * clear() 内部会触发 APlayer 的 pause 事件，
- * 用 _ignorePause 防止它覆盖 store.isPlaying
  */
 watch(
   () => playerStore.queue,
@@ -133,15 +141,14 @@ watch(
         type: 'hls'
       }))
       ap.list.add(audioList)
-      // 显式切换到目标索引，确保 APlayer 内部状态与 store 同步
       if (targetIdx >= 0 && targetIdx < tracks.length) {
         ap.list.switch(targetIdx)
       }
-      // 需要播放时，延迟一小段时间等 HLS 初始化完成
+      // HLS 初始化后开始播放
       if (shouldPlay) {
         nextTick().then(() => {
           setTimeout(() => {
-            if (ap) ap.play()
+            if (ap) ap.play().catch(() => {})
           }, 200)
         })
       }
@@ -171,7 +178,7 @@ watch(
   }
 )
 
-// 监听播放模式（映射到 APlayer 的 order）
+// 监听播放模式
 watch(
   () => playerStore.playMode,
   (mode: PlayMode) => {
@@ -271,7 +278,6 @@ onUnmounted(() => {
   background: var(--color-primary) !important;
 }
 
-/* 封面播放按钮颜色修正 */
 .music-player :deep(.aplayer-button) {
   border-color: rgba(255,255,255,0.8) !important;
 }
@@ -280,7 +286,6 @@ onUnmounted(() => {
   fill: #fff !important;
 }
 
-/* 进度条可拖动区域 */
 .music-player :deep(.aplayer-bar-wrap) {
   cursor: pointer !important;
 }
@@ -293,7 +298,6 @@ onUnmounted(() => {
   cursor: pointer !important;
 }
 
-/* 进度条拖动手柄 */
 .music-player :deep(.aplayer-thumb) {
   cursor: pointer !important;
   box-shadow: 0 0 4px rgba(0,0,0,0.3) !important;

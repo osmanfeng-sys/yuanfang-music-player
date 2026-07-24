@@ -26,12 +26,8 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** APlayer 实例（由 MusicPlayer 组件挂载后设置） */
   const aplayerInstance = ref<any>(null)
-
-  /** next/prev 播放防抖计时器 */
-  let _playTimer: ReturnType<typeof setTimeout> | null = null
-  function _cancelPlayTimer() {
-    if (_playTimer) { clearTimeout(_playTimer); _playTimer = null }
-  }
+  /** next/prev 切换中标记，MusicPlayer 据此忽略 pause 事件 */
+  const ignorePause = ref(false)
 
   // ===== Getters =====
 
@@ -88,17 +84,10 @@ export const usePlayerStore = defineStore('player', () => {
     const total = queue.value.length
     if (total <= 1) return
     const nextIdx = (currentIndex.value + 1) % total
+    ignorePause.value = true
     aplayerInstance.value.list.switch(nextIdx)
-    // 切换后等 HLS 初始化再播放
-    if (isPlaying.value) {
-      _cancelPlayTimer()
-      _playTimer = setTimeout(() => {
-        if (aplayerInstance.value) {
-          aplayerInstance.value.play()
-        }
-        _playTimer = null
-      }, 250)
-    }
+    // 等 listswitch 事件触发完成后释放标记
+    setTimeout(() => { ignorePause.value = false }, 600)
   }
 
   function prev() {
@@ -106,17 +95,9 @@ export const usePlayerStore = defineStore('player', () => {
     const total = queue.value.length
     if (total <= 1) return
     const prevIdx = (currentIndex.value - 1 + total) % total
+    ignorePause.value = true
     aplayerInstance.value.list.switch(prevIdx)
-    // 切换后等 HLS 初始化再播放
-    if (isPlaying.value) {
-      _cancelPlayTimer()
-      _playTimer = setTimeout(() => {
-        if (aplayerInstance.value) {
-          aplayerInstance.value.play()
-        }
-        _playTimer = null
-      }, 250)
-    }
+    setTimeout(() => { ignorePause.value = false }, 600)
   }
 
   function seek(time: number) {
@@ -198,6 +179,7 @@ export const usePlayerStore = defineStore('player', () => {
     muted,
     playMode,
     aplayerInstance,
+    ignorePause,
     // Getters
     currentTrack,
     queueLength,
