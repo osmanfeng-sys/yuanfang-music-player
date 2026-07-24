@@ -81,16 +81,16 @@ export const usePlayerStore = defineStore('player', () => {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
-    // 使用 APlayer 原生的 next 方法
-    aplayerInstance.value.list.next()
+    const nextIdx = (currentIndex.value + 1) % total
+    aplayerInstance.value.list.switch(nextIdx)
   }
 
   function prev() {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
-    // 使用 APlayer 原生的 prev 方法
-    aplayerInstance.value.list.prev()
+    const prevIdx = (currentIndex.value - 1 + total) % total
+    aplayerInstance.value.list.switch(prevIdx)
   }
 
   function seek(time: number) {
