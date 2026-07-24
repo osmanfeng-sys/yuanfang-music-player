@@ -64,7 +64,7 @@ function playTrack(trackId: string) {
     <!-- 全屏固定背景（永不滚动） -->
     <div
       class="home__bg"
-      style="background-image: url('/PIC/IMG_0776.JPG'); background-size: cover; background-position: center;"
+      style="background-image: url('/PIC/IMG_0776.JPG'); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed;"
     >
       <div class="home__bg-overlay" />
     </div>

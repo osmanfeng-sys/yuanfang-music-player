@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { fetchArtistDetail } from '@/services/music'
 import PlaylistItem from '@/components/playlist/PlaylistItem.vue'
@@ -9,6 +9,7 @@ import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import type { Track, Artist } from '@/types'
 
 const route = useRoute()
+const router = useRouter()
 const playerStore = usePlayerStore()
 const id = route.params.id as string
 
@@ -40,12 +41,14 @@ onMounted(loadArtist)
 function playTrack(trackId: string) {
   playerStore.setQueue(tracks.value)
   playerStore.playTrack(trackId)
+  router.push('/')
 }
 
 function playAll() {
   if (tracks.value.length > 0) {
     playerStore.setQueue(tracks.value, 0)
     playerStore.isPlaying = true
+    router.push('/')
   }
 }
 </script>
