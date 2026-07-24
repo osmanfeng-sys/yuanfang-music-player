@@ -50,9 +50,10 @@ function playArtistTracks(artistName: string) {
 
 function playTrack(trackId: string) {
   emit('close')
-  const track = playlistStore.getTrackById(trackId)
-  if (track) {
-    playerStore.setQueue([track], 0)
+  const all = allTracks.value
+  const idx = all.findIndex(t => t.id === trackId)
+  if (idx !== -1) {
+    playerStore.setQueue(all, idx)
     playerStore.isPlaying = true
     router.push('/')
   }

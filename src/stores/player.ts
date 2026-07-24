@@ -17,7 +17,7 @@ export const usePlayerStore = defineStore('player', () => {
   /** 总时长（秒） */
   const duration = ref(0)
   /** 音量 0-1 */
-  const volume = ref(0.7)
+  const volume = ref(0.5)
   /** 是否静音 */
   const muted = ref(false)
 
@@ -81,6 +81,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
+    // 使用 APlayer 原生的 next 方法
     aplayerInstance.value.list.next()
   }
 
@@ -88,6 +89,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
+    // 使用 APlayer 原生的 prev 方法
     aplayerInstance.value.list.prev()
   }
 

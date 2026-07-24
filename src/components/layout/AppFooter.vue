@@ -11,6 +11,29 @@ const barRef = ref<HTMLElement>()
 const isDragging = ref(false)
 const isHovering = ref(false)
 
+/** 音量控制 */
+const showVolumeSlider = ref(false)
+let volumeHideTimer: ReturnType<typeof setTimeout> | null = null
+
+function onVolumeEnter() {
+  if (volumeHideTimer) clearTimeout(volumeHideTimer)
+  showVolumeSlider.value = true
+}
+
+function onVolumeLeave() {
+  volumeHideTimer = setTimeout(() => {
+    showVolumeSlider.value = false
+  }, 1200)
+}
+
+function setVolumeFromEvent(e: MouseEvent) {
+  const target = e.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  let ratio = 1 - (e.clientY - rect.top) / rect.height
+  ratio = Math.max(0, Math.min(1, ratio))
+  playerStore.setVolume(ratio)
+}
+
 /** 从鼠标事件计算并跳转进度 */
 function seekFromEvent(e: MouseEvent) {
   const bar = barRef.value
@@ -31,7 +54,6 @@ function seekFromEvent(e: MouseEvent) {
 }
 
 function onBarMouseDown(e: MouseEvent) {
-  // 只响应左键
   if (e.button !== 0) return
   isDragging.value = true
   isHovering.value = true
@@ -122,6 +144,42 @@ function onBarMouseUp() {
           </div>
         </div>
         <span class="footer__time">{{ formatTime(playerStore.duration) }}</span>
+      </div>
+
+      <!-- 音量控制 -->
+      <div
+        class="footer__volume"
+        @mouseenter="onVolumeEnter"
+        @mouseleave="onVolumeLeave"
+      >
+        <button class="footer__btn footer__volume-btn" aria-label="音量">
+          <svg v-if="playerStore.muted || playerStore.volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <line x1="23" y1="9" x2="17" y2="15" />
+            <line x1="17" y1="9" x2="23" y2="15" />
+          </svg>
+          <svg v-else-if="playerStore.volume < 0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 010 7.07" />
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 010 7.07" />
+            <path d="M19.07 4.93a10 10 0 010 14.14" />
+          </svg>
+        </button>
+
+        <Transition name="vol">
+          <div v-if="showVolumeSlider" class="footer__volume-slider" @mousedown.prevent>
+            <div class="footer__volume-track" @mousedown="setVolumeFromEvent">
+              <div
+                class="footer__volume-fill"
+                :style="{ height: `${playerStore.muted ? 0 : playerStore.volume * 100}%` }"
+              />
+            </div>
+            <span class="footer__volume-pct">{{ Math.round(playerStore.muted ? 0 : playerStore.volume * 100) }}%</span>
+          </div>
+        </Transition>
       </div>
     </template>
   </footer>
@@ -245,7 +303,7 @@ function onBarMouseUp() {
   display: flex;
   align-items: center;
   cursor: pointer;
-  padding: 8px 0; /* 扩大点击区域 */
+  padding: 8px 0;
 }
 
 .footer__bar-track {
@@ -281,6 +339,73 @@ function onBarMouseUp() {
   transform: translate(-50%, -50%) scale(1);
 }
 
+/* ===== 音量控制 ===== */
+.footer__volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.footer__volume-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.footer__volume-slider {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-xs);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+}
+
+.footer__volume-track {
+  position: relative;
+  width: 6px;
+  height: 80px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.footer__volume-fill {
+  width: 100%;
+  background: var(--color-primary);
+  border-radius: 3px;
+  transition: height 0.1s ease;
+}
+
+.footer__volume-pct {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 音量滑入动画 */
+.vol-enter-active,
+.vol-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.vol-enter-from,
+.vol-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+}
+
 .footer__empty {
   width: 100%;
   display: flex;
@@ -299,6 +424,9 @@ function onBarMouseUp() {
     min-width: 0;
   }
   .footer__progress {
+    display: none;
+  }
+  .footer__volume {
     display: none;
   }
 }

@@ -45,15 +45,17 @@ const recentTracks = computed<Track[]>(() => {
 onMounted(loadMusic)
 
 function playTrack(trackId: string) {
-  const track = playlistStore.getTrackById(trackId)
-  if (track) {
-    const idx = playerStore.queue.findIndex((t) => t.id === trackId)
-    if (idx !== -1 && playerStore.queue.length > 0) {
-      playerStore.currentIndex = idx
+  const all = playlistStore.allTracks
+  const idx = all.findIndex(t => t.id === trackId)
+  if (idx !== -1) {
+    // 如果已在当前队列中，直接切换
+    const existingIdx = playerStore.queue.findIndex(t => t.id === trackId)
+    if (existingIdx !== -1 && playerStore.queue.length > 0) {
+      playerStore.currentIndex = existingIdx
       playerStore.isPlaying = true
       return
     }
-    playerStore.setQueue([track], 0)
+    playerStore.setQueue(all, idx)
     playerStore.isPlaying = true
   }
 }
