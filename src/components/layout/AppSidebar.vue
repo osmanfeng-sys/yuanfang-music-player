@@ -52,15 +52,6 @@ const emit = defineEmits<{
       </router-link>
     </nav>
 
-    <div class="sidebar__section">
-      <h3 class="sidebar__section-title">系统播放列表</h3>
-      <p class="sidebar__empty">加载中...</p>
-    </div>
-
-    <div class="sidebar__section">
-      <h3 class="sidebar__section-title">我的歌单</h3>
-      <p class="sidebar__empty">暂无自定义歌单</p>
-    </div>
   </aside>
 </template>
 

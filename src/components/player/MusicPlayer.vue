@@ -120,6 +120,7 @@ watch(
   (tracks) => {
     if (!ap) return
     const wasPlaying = playerStore.isPlaying
+    const targetIdx = playerStore.currentIndex
     _ignorePause = true
     ap.list.clear()
     _ignorePause = false
@@ -132,6 +133,10 @@ watch(
         type: 'hls'
       }))
       ap.list.add(audioList)
+      // 显式切换到目标索引，确保 APlayer 内部状态与 store 同步
+      if (targetIdx >= 0 && targetIdx < tracks.length) {
+        ap.list.switch(targetIdx)
+      }
       if (wasPlaying) {
         ap.play()
       }

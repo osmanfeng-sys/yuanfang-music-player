@@ -81,16 +81,14 @@ export const usePlayerStore = defineStore('player', () => {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
-    const nextIdx = (currentIndex.value + 1) % total
-    aplayerInstance.value.list.switch(nextIdx)
+    aplayerInstance.value.list.next()
   }
 
   function prev() {
     if (!aplayerInstance.value) return
     const total = queue.value.length
     if (total <= 1) return
-    const prevIdx = (currentIndex.value - 1 + total) % total
-    aplayerInstance.value.list.switch(prevIdx)
+    aplayerInstance.value.list.prev()
   }
 
   function seek(time: number) {
