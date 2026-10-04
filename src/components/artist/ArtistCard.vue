@@ -24,7 +24,7 @@ function onClick() {
     <div class="artist-card__cover">
       <!-- 默认头像：绿色背景 + 音符图标 -->
       <svg width="100%" height="100%" viewBox="0 0 120 120" fill="none">
-        <rect width="120" height="120" rx="16" fill="#1DB954"/>
+        <rect width="120" height="120" rx="16" fill="#ff5e5e"/>
         <circle cx="60" cy="52" r="16" fill="rgba(255,255,255,0.2)"/>
         <path d="M42 86c0-10 8-18 18-18s18 8 18 18" stroke="rgba(255,255,255,0.4)" stroke-width="3.5" fill="none" stroke-linecap="round"/>
         <path d="M57 42l18-5v18M57 55l18-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/>

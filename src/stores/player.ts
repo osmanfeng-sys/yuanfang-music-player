@@ -29,6 +29,11 @@ export const usePlayerStore = defineStore('player', () => {
   /** next/prev 切换中标记，MusicPlayer 据此忽略 pause 事件 */
   const ignorePause = ref(false)
 
+  /** 播放倍速 */
+  const playbackRate = ref(1)
+  /** 歌词行（APlayer 解析 lrc 后同步过来） */
+  const lyricLines = ref<{ time: number; text: string }[]>([])
+
   // ===== Getters =====
 
   /** 当前播放曲目 */
@@ -47,6 +52,18 @@ export const usePlayerStore = defineStore('player', () => {
 
   const isLastTrack = computed(() => currentIndex.value >= queue.value.length - 1)
   const isFirstTrack = computed(() => currentIndex.value <= 0)
+
+  /** 当前歌词行索引（-1 = 前奏 / 无歌词） */
+  const lyricIndex = computed(() => {
+    const lines = lyricLines.value
+    if (lines.length === 0) return -1
+    let idx = -1
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].time <= currentTime.value) idx = i
+      else break
+    }
+    return idx
+  })
 
   // ===== Actions =====
 
@@ -121,6 +138,19 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  /** 设置播放倍速 */
+  function setPlaybackRate(rate: number) {
+    playbackRate.value = rate
+    if (aplayerInstance.value) {
+      aplayerInstance.value.playbackRate?.(rate)
+    }
+  }
+
+  /** 同步歌词行（MusicPlayer 从 APlayer 读取） */
+  function setLyricLines(lines: { time: number; text: string }[]) {
+    lyricLines.value = lines
+  }
+
   function setPlayMode(mode: PlayMode) {
     playMode.value = mode
     if (aplayerInstance.value) {
@@ -180,12 +210,15 @@ export const usePlayerStore = defineStore('player', () => {
     playMode,
     aplayerInstance,
     ignorePause,
+    playbackRate,
+    lyricLines,
     // Getters
     currentTrack,
     queueLength,
     progress,
     isLastTrack,
     isFirstTrack,
+    lyricIndex,
     // Actions
     initPlayer,
     setQueue,
@@ -198,6 +231,8 @@ export const usePlayerStore = defineStore('player', () => {
     setVolume,
     toggleMute,
     setPlayMode,
+    setPlaybackRate,
+    setLyricLines,
     addToQueue,
     playNext,
     removeFromQueue,

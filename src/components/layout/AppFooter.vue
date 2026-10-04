@@ -188,15 +188,19 @@ function onBarMouseUp() {
 <style scoped>
 .footer {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: var(--footer-height);
+  bottom: 12px;
+  left: var(--page-gutter);
+  right: var(--page-gutter);
+  height: var(--playerbar-height);
   display: flex;
   align-items: center;
-  padding: 0 var(--spacing-md);
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--bg-tertiary);
+  padding: 0 var(--spacing-lg);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   gap: var(--spacing-md);
 }
@@ -272,14 +276,15 @@ function onBarMouseUp() {
 }
 
 .footer__btn--play {
-  width: 40px;
-  height: 40px;
-  background: var(--color-primary);
+  width: 42px;
+  height: 42px;
+  background: var(--accent);
   color: #fff;
+  box-shadow: 0 2px 10px rgba(255, 94, 94, 0.45);
 }
 
 .footer__btn--play:hover {
-  background: var(--color-primary-hover);
+  background: #ff7676;
 }
 
 .footer__progress {
@@ -309,7 +314,7 @@ function onBarMouseUp() {
 .footer__bar-track {
   width: 100%;
   height: 4px;
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
   position: relative;
   cursor: pointer;
@@ -317,7 +322,7 @@ function onBarMouseUp() {
 
 .footer__bar-fill {
   height: 100%;
-  background: var(--color-primary);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.1s linear;
 }
@@ -328,7 +333,7 @@ function onBarMouseUp() {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--accent);
   transform: translate(-50%, -50%) scale(0);
   transition: transform 0.15s ease;
   box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -361,8 +366,10 @@ function onBarMouseUp() {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--bg-tertiary);
+  background: rgba(20, 20, 20, 0.7);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-xs);
   box-shadow: var(--shadow-lg);
@@ -373,7 +380,7 @@ function onBarMouseUp() {
   position: relative;
   width: 6px;
   height: 80px;
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
   cursor: pointer;
   display: flex;
@@ -382,7 +389,7 @@ function onBarMouseUp() {
 
 .footer__volume-fill {
   width: 100%;
-  background: var(--color-primary);
+  background: var(--accent);
   border-radius: 3px;
   transition: height 0.1s ease;
 }

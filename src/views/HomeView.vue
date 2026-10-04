@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { useUserStore } from '@/stores/user'
@@ -7,6 +7,8 @@ import { fetchAllTracks } from '@/services/music'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
+import { loadLyrics } from '@/services/lyrics'
+import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
 
 const playlistStore = usePlaylistStore()
@@ -15,6 +17,32 @@ const userStore = useUserStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+/** 主菜单：正在播放 / 播放列表 / 歌曲搜索 */
+const activeTab = ref<'playing' | 'playlist' | 'search'>('playing')
+
+/** 播放列表二级：当前打开的音乐夹 */
+const openedFolder = ref<string | null>(null)
+
+/** 搜索关键词 */
+const keyword = ref('')
+
+/** 弹层 */
+const showInfo = ref(false)
+const showBgPanel = ref(false)
+
+/** 播客地址 */
+const PODCAST_URL = 'https://yuanfangselect.ccwu.cc/'
+
+/** 播放倍速选项 */
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+/** 背景模式选项 */
+const BG_MODES: { key: 'wallpaper' | 'cover' | 'black'; label: string }[] = [
+  { key: 'wallpaper', label: '默认壁纸' },
+  { key: 'cover', label: '封面模糊' },
+  { key: 'black', label: '纯黑' }
+]
 
 async function loadMusic() {
   loading.value = true
@@ -35,386 +63,737 @@ async function loadMusic() {
   }
 }
 
-const allTracks = computed(() => playlistStore.allTracks)
-
-// 最近播放（最多 10 首）
-const recentTracks = computed<Track[]>(() => {
-  return userStore.playHistory
-    .map((id) => playlistStore.getTrackById(id))
-    .filter((t): t is Track => t !== undefined)
-    .slice(0, 10)
-})
-
 onMounted(loadMusic)
 
-function playTrack(trackId: string) {
-  const all = playlistStore.allTracks
-  const idx = all.findIndex(t => t.id === trackId)
-  if (idx !== -1) {
-    const existingIdx = playerStore.queue.findIndex(t => t.id === trackId)
-    if (existingIdx !== -1 && playerStore.queue.length > 0) {
-      playerStore.currentIndex = existingIdx
-      playerStore.ignorePause = true
-      playerStore.aplayerInstance?.list.switch(existingIdx)
-      playerStore.isPlaying = true
-      setTimeout(() => { playerStore.ignorePause = false }, 600)
-      return
-    }
-    playerStore.setQueue(all, idx)
-    playerStore.isPlaying = true
-  }
+// ===== 数据 =====
+
+const folders = computed(() => playlistStore.folders)
+const queue = computed(() => playerStore.queue)
+const currentId = computed(() => playerStore.currentTrack?.id ?? null)
+
+/** 音乐夹内的曲目 */
+const openedTracks = computed(
+  () => folders.value.find((f) => f.name === openedFolder.value)?.tracks ?? []
+)
+
+/** 搜索结果 */
+const searchResults = computed(() =>
+  keyword.value.trim() ? playlistStore.searchTracks(keyword.value) : []
+)
+
+// ===== 播放 =====
+
+function playFrom(list: Track[], track: Track) {
+  const idx = list.findIndex((t) => t.id === track.id)
+  if (idx === -1) return
+  userStore.addToHistory(track.id)
+  playerStore.setQueue([...list], idx)
+  playerStore.isPlaying = true
+  // 后台并行预取分片（不阻塞播放），缓解链路慢导致的卡顿
+  void prefetchHlsSegments(track.url)
 }
+
+function onRateChange(e: Event) {
+  playerStore.setPlaybackRate(Number((e.target as HTMLSelectElement).value))
+}
+
+function openPodcast() {
+  if (PODCAST_URL) window.open(PODCAST_URL, '_blank')
+  else window.alert('播客地址待定')
+}
+
+function toggleFolder(name: string) {
+  openedFolder.value = openedFolder.value === name ? null : name
+}
+
+// ===== 歌词：本地缓存 → 云端 → 在线匹配（lrclib）=====
+
+const lyricLoading = ref(false)
+
+watch(
+  () => playerStore.currentTrack?.id,
+  async (id) => {
+    playerStore.setLyricLines([])
+    if (!id) return
+    const track = playlistStore.getTrackById(id)
+    if (!track) return
+    lyricLoading.value = true
+    try {
+      const lines = await loadLyrics(track)
+      // 加载期间可能已切歌，避免覆盖新歌歌词
+      if (playerStore.currentTrack?.id === id) playerStore.setLyricLines(lines)
+    } finally {
+      lyricLoading.value = false
+    }
+  },
+  { immediate: true }
+)
+
+// ===== 歌词跟随滚动 =====
+
+const lyricBox = ref<HTMLElement>()
+
+watch(
+  () => playerStore.lyricIndex,
+  async (i) => {
+    if (i < 0) return
+    await nextTick()
+    const box = lyricBox.value
+    const el = box?.children[i] as HTMLElement | undefined
+    if (box && el) {
+      box.scrollTo({
+        top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2,
+        behavior: 'smooth'
+      })
+    }
+  }
+)
 </script>
 
 <template>
   <main class="home">
-    <!-- 全屏固定背景（永不滚动） -->
-    <div
-      class="home__bg"
-      style="background-image: url('/PIC/IMG_0776.JPG'); background-size: cover; background-position: center; background-repeat: no-repeat; background-attachment: fixed;"
-    >
-      <div class="home__bg-overlay" />
-    </div>
+    <!-- ===== 左：主区 ===== -->
+    <section class="home__main">
+      <!-- 顶部按钮条 -->
+      <div class="home__bar">
+        <span
+          class="home__tab"
+          :class="{ 'home__tab--active': activeTab === 'playing' }"
+          @click="activeTab = 'playing'"
+        >正在播放</span>
+        <span
+          class="home__tab"
+          :class="{ 'home__tab--active': activeTab === 'playlist' }"
+          @click="activeTab = 'playlist'"
+        >播放列表</span>
+        <span
+          class="home__tab"
+          :class="{ 'home__tab--active': activeTab === 'search' }"
+          @click="activeTab = 'search'"
+        >歌曲搜索</span>
 
-    <LoadingSpinner v-if="loading" size="lg" text="正在加载音乐库..." />
+        <span class="home__bar-spacer" />
 
-    <ErrorMessage
-      v-else-if="error"
-      :message="error"
-      :retryable="true"
-      @retry="loadMusic"
-    />
+        <button class="home__icon-btn" title="播客地址（待定）" @click="openPodcast">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <rect x="9" y="2" width="6" height="11" rx="3" />
+            <path d="M5 10a7 7 0 0014 0M12 17v4M8 21h8" />
+          </svg>
+        </button>
 
-    <template v-else>
-      <!-- 右侧均衡器（右下角，较矮） -->
-      <div class="home__equalizer">
-        <template v-if="playerStore.currentTrack">
+        <button class="home__icon-btn" title="播放器说明" @click="showInfo = true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5M12 8h.01" />
+          </svg>
+        </button>
+
+        <button
+          class="home__icon-btn"
+          :class="{ 'home__icon-btn--on': showBgPanel }"
+          title="背景设置"
+          @click="showBgPanel = !showBgPanel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.68 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 3.68 1.65 1.65 0 0010 2.17V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.14.35.44.6.82.7H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+          </svg>
+        </button>
+
+        <select
+          class="home__rate"
+          :value="playerStore.playbackRate"
+          title="播放速度"
+          @change="onRateChange"
+        >
+          <option v-for="r in RATES" :key="r" :value="r">{{ r }} x</option>
+        </select>
+
+        <!-- 背景设置浮层 -->
+        <div v-if="showBgPanel" class="home__bg-panel">
+          <button
+            v-for="m in BG_MODES"
+            :key="m.key"
+            class="home__bg-option"
+            :class="{ 'home__bg-option--on': userStore.bgMode === m.key }"
+            @click="userStore.setBgMode(m.key)"
+          >{{ m.label }}</button>
+        </div>
+      </div>
+
+      <!-- 内容区 -->
+      <div class="home__body">
+        <LoadingSpinner v-if="loading" size="lg" text="正在加载音乐库..." />
+        <ErrorMessage
+          v-else-if="error"
+          :message="error"
+          :retryable="true"
+          @retry="loadMusic"
+        />
+
+        <!-- 正在播放 -->
+        <template v-else-if="activeTab === 'playing'">
+          <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放列表」挑一首吧</p>
           <div
-            v-for="i in 16"
-            :key="i"
-            class="home__equalizer-bar"
-            :class="{ 'home__equalizer-bar--playing': playerStore.isPlaying }"
-            :style="{ animationDelay: `${i * 0.10}s` }"
-          />
+            v-for="(track, idx) in queue"
+            :key="track.id"
+            class="home__row"
+            :class="{ 'home__row--playing': currentId === track.id }"
+            @click="playFrom(queue, track)"
+          >
+            <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
+            <span class="home__row-title">{{ track.title }}</span>
+            <span class="home__row-artist">{{ track.artist }}</span>
+            <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+          </div>
+        </template>
+
+        <!-- 播放列表（音乐夹 → 二级曲目） -->
+        <template v-else-if="activeTab === 'playlist'">
+          <template v-if="openedFolder === null">
+            <p v-if="folders.length === 0" class="home__empty">没有找到音乐夹</p>
+            <div
+              v-for="f in folders"
+              :key="f.name"
+              class="home__row home__row--folder"
+              @click="toggleFolder(f.name)"
+            >
+              <span class="home__row-num">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+              </span>
+              <span class="home__row-title">{{ f.name }}</span>
+              <span class="home__row-artist">{{ f.tracks.length }} 首</span>
+              <span class="home__row-dur">›</span>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="home__crumb" @click="openedFolder = null">
+              ‹ 返回音乐夹列表
+            </div>
+            <div
+              v-for="(track, idx) in openedTracks"
+              :key="track.id"
+              class="home__row"
+              :class="{ 'home__row--playing': currentId === track.id }"
+              @click="playFrom(openedTracks, track)"
+            >
+              <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
+              <span class="home__row-title">{{ track.title }}</span>
+              <span class="home__row-artist">{{ track.artist }}</span>
+              <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+            </div>
+          </template>
+        </template>
+
+        <!-- 歌曲搜索 -->
+        <template v-else>
+          <div class="home__search">
+            <input
+              v-model="keyword"
+              class="home__search-input"
+              type="search"
+              placeholder="搜索歌曲名 / 歌手"
+            />
+            <span class="home__search-count">
+              {{ keyword.trim() ? `${searchResults.length} 条结果` : '' }}
+            </span>
+          </div>
+          <p v-if="keyword.trim() && searchResults.length === 0" class="home__empty">没有匹配的歌曲</p>
+          <div
+            v-for="(track, idx) in searchResults"
+            :key="track.id"
+            class="home__row"
+            :class="{ 'home__row--playing': currentId === track.id }"
+            @click="playFrom(searchResults, track)"
+          >
+            <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
+            <span class="home__row-title">{{ track.title }}</span>
+            <span class="home__row-artist">{{ track.artist }}</span>
+            <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+          </div>
         </template>
       </div>
+    </section>
 
-      <!-- 底部歌曲信息 -->
-      <div v-if="playerStore.currentTrack" class="home__track-info">
-        <span v-if="!playerStore.isPlaying" class="home__paused">⏸ </span>
-        {{ playerStore.currentTrack.title }} — {{ playerStore.currentTrack.artist }}
-      </div>
-      <div v-else class="home__track-info home__track-info--idle">
-        选择歌曲开始播放
-      </div>
+    <!-- ===== 右：播放面板（歌名 / CD / 歌词） ===== -->
+    <aside class="home__player">
+      <p class="home__song-name">{{ playerStore.currentTrack?.title ?? '未在播放' }}</p>
 
-      <!-- 最近播放 -->
-      <section v-if="recentTracks.length > 0" class="home__section">
-        <h2 class="home__section-title">最近播放</h2>
-        <div class="home__recent-scroll">
-          <div
-            v-for="track in recentTracks"
-            :key="track.id"
-            class="home__recent-item"
-            @click="playTrack(track.id)"
-          >
-            <div class="home__recent-cover">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                <path d="M10 8v8l6-4-6-4z" fill="currentColor"/>
-              </svg>
-            </div>
-            <span class="home__recent-title">{{ track.title }}</span>
-            <span class="home__recent-artist">{{ track.artist }}</span>
-          </div>
+      <div class="home__disc-wrap">
+        <div class="home__disc" :class="{ 'home__disc--spin': playerStore.isPlaying }">
+          <img
+            :src="playerStore.currentTrack?.cover || '/PIC/disc-default.svg'"
+            alt=""
+            class="home__disc-img"
+          />
         </div>
-      </section>
+      </div>
 
-      <!-- 手机端快捷点歌（仅在无最近播放且无当前曲目时显示） -->
-      <section
-        v-if="recentTracks.length === 0 && !playerStore.currentTrack && allTracks.length > 0"
-        class="home__section home__quick-mobile"
-      >
-        <h2 class="home__section-title">点歌台</h2>
-        <div class="home__mobile-list">
-          <div
-            v-for="(track, idx) in allTracks.slice(0, 15)"
-            :key="track.id"
-            class="home__mobile-item"
-            @click="playTrack(track.id)"
-          >
-            <span class="home__mobile-idx">{{ idx + 1 }}</span>
-            <span class="home__mobile-info">
-              <span class="home__mobile-title">{{ track.title }}</span>
-              <span class="home__mobile-artist">{{ track.artist }}</span>
-            </span>
-            <span class="home__mobile-dur">{{ formatTime(track.duration ?? 0) }}</span>
-          </div>
+      <p class="home__song-artist">
+        {{ playerStore.currentTrack?.artist ?? '从左侧列表选择歌曲' }}
+      </p>
+
+      <div ref="lyricBox" class="home__lyric">
+        <p v-if="lyricLoading" class="home__lyric-empty">歌词加载中…</p>
+        <p v-else-if="playerStore.lyricLines.length === 0" class="home__lyric-empty">暂无歌词</p>
+        <template v-else>
+          <p
+            v-for="(line, i) in playerStore.lyricLines"
+            :key="i"
+            class="home__lyric-line"
+            :class="{ 'home__lyric-line--active': i === playerStore.lyricIndex }"
+          >{{ line.text }}</p>
+        </template>
+      </div>
+    </aside>
+
+    <!-- ===== 说明弹层 ===== -->
+    <div v-if="showInfo" class="home__modal" @click.self="showInfo = false">
+      <div class="home__modal-panel">
+        <div class="home__modal-head">
+          <span>播放器说明</span>
+          <button class="home__icon-btn" @click="showInfo = false">✕</button>
         </div>
-        <div class="home__mobile-hint">← 点击左侧导航按钮可查看完整艺人列表</div>
-      </section>
-    </template>
+        <div class="home__modal-body">
+          <p><b>远方音乐播放器</b> — 基于 HLS 流媒体的在线音乐库。</p>
+          <p><b>正在播放</b>：显示当前播放队列，点击任意曲目直接切歌。</p>
+          <p><b>播放列表</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。</p>
+          <p><b>歌曲搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
+          <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
+          <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
+          <p><b>快捷键</b>：拖动底部进度条可跳转，悬停喇叭图标可调音量；上下首、循环模式在底部控制条。</p>
+          <p class="home__modal-note">音频来自 Cloudflare R2，按需切片（HLS），首次播放会有短暂缓冲。</p>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .home {
-  padding: var(--spacing-lg);
-  max-width: var(--content-max-width);
-  margin: 0 auto;
-  width: 100%;
-  position: relative;
-  min-height: calc(100vh - var(--header-height) - var(--footer-height) - var(--spacing-lg) * 2);
-}
-
-/* ===== 全屏固定背景 ===== */
-.home__bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-}
-
-.home__bg-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.home__section,
-.home__equalizer,
-.home__track-info {
-  position: relative;
-  z-index: 1;
-}
-
-.home .spinner,
-.home .error {
-  position: relative;
-  z-index: 1;
-}
-
-/* ===== 通用 Section ===== */
-.home__section {
-  margin-bottom: var(--spacing-xl);
-}
-
-.home__section-title {
-  font-size: 1.2rem;
-  font-weight: 700;
-  margin: 0 0 var(--spacing-md);
-}
-
-/* ===== 右下角均衡器 ===== */
-.home__equalizer {
-  position: fixed;
-  bottom: calc(var(--footer-height) + 12px);
-  right: var(--spacing-md);
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  z-index: 50;
-  height: 36px;
+  gap: var(--spacing-md);
+  height: 100%;
 }
 
-.home__equalizer-bar {
-  width: 4px;
-  height: 6px;
-  border-radius: 2px;
-  background: #1DB954;
-  box-shadow: 0 0 6px rgba(29, 185, 84, 0.6);
-  transition: height 0.2s ease;
-}
-
-.home__equalizer-bar--playing {
-  animation: equalizer 0.9s ease-in-out infinite;
-}
-
-@keyframes equalizer {
-  0%, 100% { height: 6px; }
-  25% { height: 24px; }
-  50% { height: 14px; }
-  75% { height: 32px; }
-}
-
-/* ===== 底部歌曲信息 ===== */
-.home__track-info {
-  position: fixed;
-  bottom: calc(var(--footer-height) + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  z-index: 50;
-  white-space: nowrap;
-  max-width: 60vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
-}
-
-.home__track-info--idle {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 0.75rem;
-}
-
-.home__paused {
-  opacity: 0.6;
-}
-
-/* ===== 最近播放横向滚动 ===== */
-.home__recent-scroll {
-  display: flex;
-  gap: var(--spacing-sm);
-  overflow-x: auto;
-  padding-bottom: var(--spacing-sm);
-  scrollbar-width: thin;
-  scrollbar-color: var(--bg-tertiary) transparent;
-}
-
-.home__recent-scroll::-webkit-scrollbar {
-  height: 4px;
-}
-
-.home__recent-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.home__recent-scroll::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: 2px;
-}
-
-.home__recent-item {
-  flex-shrink: 0;
+/* ===== 左侧主区 ===== */
+.home__main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
+  overflow: hidden;
+}
+
+/* 顶部按钮条 */
+.home__bar {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  width: 120px;
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-  background: rgba(30, 30, 30, 0.85);
-  backdrop-filter: blur(8px);
+  gap: 4px;
+  height: 48px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+}
+
+.home__tab {
+  padding: 4px 20px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(2px);
   cursor: pointer;
+  user-select: none;
   transition: background var(--transition-fast);
 }
 
-.home__recent-item:hover {
-  background: rgba(40, 40, 40, 0.9);
+.home__tab:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.home__recent-cover {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
+.home__tab--active {
+  background: var(--accent);
+}
+
+.home__bar-spacer {
+  flex: 1;
+}
+
+.home__icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
-.home__recent-title {
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
+.home__icon-btn:hover,
+.home__icon-btn--on {
+  background: var(--accent);
 }
 
-.home__recent-artist {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
+.home__rate {
+  height: 26px;
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--glass-bg-strong);
+  border: none;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
 }
 
-/* ===== 手机端快捷点歌 ===== */
-.home__quick-mobile {
-  display: none;
+.home__rate option {
+  color: #000;
 }
 
-@media (max-width: 767px) {
-  .home__quick-mobile {
-    display: block;
-  }
-}
-
-.home__mobile-list {
+/* 背景设置浮层 */
+.home__bg-panel {
+  position: absolute;
+  right: 10px;
+  top: 44px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 6px;
+  background: rgba(20, 20, 20, 0.8);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  z-index: 20;
 }
 
-.home__mobile-item {
+.home__bg-option {
+  padding: 5px 16px;
+  font-size: 12px;
+  text-align: left;
+  color: #fff;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.home__bg-option:hover {
+  background: var(--glass-bg-hover);
+}
+
+.home__bg-option--on {
+  background: var(--accent);
+}
+
+/* 内容区 */
+.home__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+  scrollbar-width: thin;
+}
+
+.home__crumb {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.home__row {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  font-size: 12px;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.home__row:hover {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+  backdrop-filter: blur(6px);
+}
+
+.home__row--playing {
+  background-image: linear-gradient(to right, rgba(255, 94, 94, 0.28) 0%, rgba(255, 255, 255, 0) 100%);
+  backdrop-filter: blur(6px);
+  font-weight: 600;
+}
+
+.home__row--folder .home__row-title {
+  font-weight: 600;
+}
+
+.home__row-num {
+  width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.home__row--playing .home__row-num {
+  color: var(--accent);
+}
+
+.home__row-title {
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__row-artist {
+  width: 180px;
+  flex-shrink: 0;
+  padding-right: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__row-dur {
+  width: 52px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.home__empty {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* 搜索 */
+.home__search {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 10px var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  background: rgba(30, 30, 30, 0.7);
-  backdrop-filter: blur(4px);
+  padding: 4px 0 12px;
 }
 
-.home__mobile-item:hover {
-  background: rgba(40, 40, 40, 0.85);
-}
-
-.home__mobile-item:active {
-  background: rgba(29, 185, 84, 0.15);
-}
-
-.home__mobile-idx {
-  width: 20px;
-  text-align: right;
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.home__mobile-info {
+.home__search-input {
   flex: 1;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  outline: none;
+}
+
+.home__search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.home__search-count {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ===== 右侧播放面板 ===== */
+.home__player {
+  width: 340px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  align-items: center;
+  padding: var(--spacing-lg) var(--spacing-md);
+  background: linear-gradient(to top, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.03) 50%, rgba(255, 255, 255, 0) 100%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
+  overflow: hidden;
 }
 
-.home__mobile-title {
-  font-size: 0.85rem;
-  font-weight: 500;
+.home__song-name {
+  width: 100%;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-align: center;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.home__mobile-artist {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.home__mobile-dur {
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
-.home__mobile-hint {
-  margin-top: var(--spacing-sm);
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
+.home__disc-wrap {
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.home__disc {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 12px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 24px rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.6);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.35) 70%);
+  /* 动画常挂，用 play-state 控制：暂停时停在当前角度而非跳回 0 */
+  animation: disc-spin 20s linear infinite;
+  animation-play-state: paused;
+}
+
+.home__disc--spin {
+  animation-play-state: running;
+}
+
+.home__disc-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes disc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.home__song-artist {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+/* 歌词 */
+.home__lyric {
+  flex: 1;
+  width: 100%;
+  margin-top: var(--spacing-md);
+  overflow-y: auto;
   text-align: center;
+  font-size: 13px;
+  line-height: 26px;
+  color: rgba(225, 225, 225, 0.7);
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+
+.home__lyric::-webkit-scrollbar {
+  display: none;
+}
+
+.home__lyric-line {
+  padding: 0 6px;
+  transition: color var(--transition-fast);
+}
+
+.home__lyric-line--active {
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 0 12px rgba(255, 94, 94, 0.6);
+}
+
+.home__lyric-empty {
+  padding: 24px 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ===== 说明弹层 ===== */
+.home__modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.home__modal-panel {
+  width: min(560px, 90vw);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
+  overflow: hidden;
+}
+
+.home__modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px var(--spacing-md);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.home__modal-body {
+  padding: var(--spacing-md);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 2;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.home__modal-note {
+  margin-top: var(--spacing-sm);
+  color: var(--text-faint);
+}
+
+/* ===== 移动端 ===== */
+@media (max-width: 900px) {
+  .home__player {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .home__row-artist {
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .home__tab {
+    padding: 4px 12px;
+  }
 }
 </style>

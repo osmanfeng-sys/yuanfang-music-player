@@ -3,6 +3,16 @@ import { WORKER_BASE_URL } from '@/utils/constants'
 import type { Track, Artist, ArtistDetailResponse } from '@/types'
 import { parseTrackName, generateTrackId } from '@/utils/parser'
 
+/** 从媒资 URL 解析音乐夹名（R2 一级目录，如 "01_AQUA(水叮当)"） */
+function extractFolder(url: string): string | undefined {
+  try {
+    const seg = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean)[0]
+    return seg || undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** 从 Raw Track 数据（含有 name 字段）解析为标准的 Track 对象 */
 function normalizeTrack(raw: {
   name?: string
@@ -20,6 +30,7 @@ function normalizeTrack(raw: {
     title,
     artist,
     url: raw.url,
+    folder: extractFolder(raw.url),
     type: 'hls'
   }
 }

@@ -70,7 +70,7 @@ function playAll() {
           <svg width="160" height="160" viewBox="0 0 120 120" fill="none">
             <defs>
               <linearGradient id="artist-cover" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#1DB954"/>
+                <stop offset="0%" stop-color="#ff5e5e"/>
                 <stop offset="100%" stop-color="#148a3c"/>
               </linearGradient>
             </defs>
@@ -114,10 +114,15 @@ function playAll() {
 
 <style scoped>
 .artist-detail {
+  height: 100%;
+  overflow-y: auto;
   padding: var(--spacing-lg);
-  max-width: var(--content-max-width);
-  margin: 0 auto;
   width: 100%;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
 }
 
 .artist-detail__header {

@@ -92,10 +92,17 @@ function clearAllData() {
 
 <style scoped>
 .settings {
+  height: 100%;
+  overflow-y: auto;
   padding: var(--spacing-lg);
-  max-width: 600px;
+  max-width: 700px;
   margin: 0 auto;
   width: 100%;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
 }
 
 .settings__title {

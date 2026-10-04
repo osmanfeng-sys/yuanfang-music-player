@@ -10,6 +10,8 @@ export interface Track {
   artist: string
   /** 专辑名（可选，从路径推断） */
   album?: string
+  /** 所属音乐夹（R2 一级目录名，如 "01_AQUA(水叮当)"） */
+  folder?: string
   /** R2 中 playlist.m3u8 的完整 Worker URL */
   url: string
   /** 封面图 URL（可选） */

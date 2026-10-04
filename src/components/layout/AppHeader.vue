@@ -4,10 +4,6 @@ import SearchBar from '@/components/search/SearchBar.vue'
 
 const userStore = useUserStore()
 
-const emit = defineEmits<{
-  'toggle-sidebar': []
-}>()
-
 function toggleTheme() {
   const next = userStore.theme === 'dark' ? 'light' : 'dark'
   userStore.setTheme(next)
@@ -17,12 +13,6 @@ function toggleTheme() {
 <template>
   <header class="header">
     <div class="header__left">
-      <button class="header__menu-btn" @click="emit('toggle-sidebar')" aria-label="菜单">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
-      </button>
-
       <router-link to="/" class="header__logo">
         <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
           <circle cx="16" cy="16" r="14" fill="var(--color-primary)" />
@@ -69,3 +59,119 @@ function toggleTheme() {
     </div>
   </header>
 </template>
+
+<style scoped>
+/* 悬浮透明顶栏 */
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 0 var(--page-gutter);
+  z-index: 60;
+  user-select: none;
+}
+
+.header__left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.header__logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+}
+
+.header__title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.header__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--spacing-md);
+}
+
+.nav-link {
+  padding: 5px 18px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: #fff;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(2px);
+  transition: background var(--transition-fast);
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.nav-link.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.header__center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.header__center :deep(*) {
+  max-width: 420px;
+  width: 100%;
+}
+
+.header__right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.header__theme-btn,
+.header__settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: rgba(255, 255, 255, 0.85);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.header__theme-btn:hover,
+.header__settings-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+@media (max-width: 767px) {
+  .header__nav {
+    display: none;
+  }
+  .header__title {
+    font-size: 17px;
+  }
+}
+</style>

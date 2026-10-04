@@ -9,6 +9,15 @@ import type { PlayMode } from '@/types'
 // APlayer 内部通过全局 `Hls` 变量引用 hls.js，需要显式挂载
 ;(window as any).Hls = Hls
 
+// 国内到 Cloudflare 的单连接吞吐低且抖动，调优 hls.js 默认参数：
+// 尽早预取首个分片、收紧缓冲目标、加大重试，减少"卡住不出声"
+Hls.DefaultConfig.startFragPrefetch = true
+Hls.DefaultConfig.maxBufferLength = 20
+Hls.DefaultConfig.maxMaxBufferLength = 40
+Hls.DefaultConfig.fragLoadingMaxRetry = 6
+Hls.DefaultConfig.fragLoadingRetryDelay = 500
+Hls.DefaultConfig.manifestLoadingMaxRetry = 4
+
 const playerStore = usePlayerStore()
 
 /** APlayer 容器 DOM 引用 */
@@ -17,7 +26,7 @@ const playerContainer = ref<HTMLDivElement>()
 // ===== APlayer 配置 =====
 const APLAYER_CONFIG = {
   autoplay: false,
-  theme: '#1DB954',
+  theme: '#ff5e5e',
   loop: 'all' as const,
   order: 'list' as const,
   preload: 'auto' as const,
@@ -138,7 +147,9 @@ watch(
         artist: t.artist,
         url: t.url,
         cover: t.cover || '',
-        type: 'hls'
+        type: 'hls',
+        // 有歌词文件时交给 APlayer 解析（lrcType: 3 即 URL 形式）
+        ...(t.lyricsUrl ? { lrc: t.lyricsUrl } : {})
       }))
       ap.list.add(audioList)
       if (targetIdx >= 0 && targetIdx < tracks.length) {

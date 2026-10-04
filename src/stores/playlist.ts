@@ -30,6 +30,20 @@ export const usePlaylistStore = defineStore('playlist', () => {
 
   const allTracks = computed(() => Object.values(trackCache.value))
 
+  /** 音乐夹分组（按 R2 一级目录名），每夹内含其全部曲目 */
+  const folders = computed(() => {
+    const map = new Map<string, Track[]>()
+    for (const t of Object.values(trackCache.value)) {
+      const name = t.folder ?? '未分类'
+      const list = map.get(name)
+      if (list) list.push(t)
+      else map.set(name, [t])
+    }
+    return Array.from(map, ([name, tracks]) => ({ name, tracks })).sort((a, b) =>
+      a.name.localeCompare(b.name, 'zh-Hans-CN')
+    )
+  })
+
   function getPlaylistById(id: string): Playlist | undefined {
     return playlists.value[id]
   }
@@ -173,6 +187,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     systemPlaylists,
     userPlaylists,
     allTracks,
+    folders,
     getPlaylistById,
     getTrackById,
     getTracksByArtist,

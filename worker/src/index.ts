@@ -13,6 +13,7 @@ import {
   handleUpdatePlaylist,
   handleDeletePlaylist
 } from './routes/playlists'
+import { handleGetLyrics, handlePutLyrics } from './routes/lyrics'
 import type { Env, RouteHandler } from './utils/types'
 
 /** 路由表：方法+路径模式 → 处理器 */
@@ -40,12 +41,20 @@ const routes: Array<{
   // 搜索
   { pattern: /^\/api\/search$/, methods: ['GET'], handler: handleSearch as RouteHandler },
 
+  // 歌词（云端缓存）
+  { pattern: /^\/api\/lyrics\/(.+)$/, methods: ['GET'], handler: (req, env, key) => handleGetLyrics(req, env, key) },
+  { pattern: /^\/api\/lyrics\/(.+)$/, methods: ['PUT'], handler: (req, env, key) => handlePutLyrics(req, env, key) },
+
   // R2 文件代理（兜底路由，放在最后）
   { pattern: /^\/.+$/, methods: ['GET', 'HEAD'], handler: handleProxy as RouteHandler },
 ]
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: { waitUntil(promise: Promise<unknown>): void }
+  ): Promise<Response> {
     const url = new URL(request.url)
     const path = url.pathname
     const method = request.method
@@ -59,11 +68,11 @@ export default {
 
       // 如果有捕获组，作为额外参数传入
       if (match.length > 1) {
-        return (route.handler as any)(request, env, match[1])
+        return (route.handler as any)(request, env, match[1], ctx)
       }
 
       // 将完整 URL 传给需要读取 query/searchParams 的处理器
-      return (route.handler as RouteHandler)(request, env, url)
+      return (route.handler as RouteHandler)(request, env, url, ctx as any)
     }
 
     // 无匹配 → 404

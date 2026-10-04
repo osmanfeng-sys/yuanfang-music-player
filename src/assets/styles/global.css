@@ -8,6 +8,13 @@
   padding: 0;
 }
 
+html,
+body {
+  height: 100%;
+  /* 全屏固定布局：页面自身不滚动，滚动交给面板内部 */
+  overflow: hidden;
+}
+
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
@@ -15,15 +22,16 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  background: var(--bg-primary);
+  font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+    'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  /* 背景由 AppLayout 的背景图层负责，这里兜底为黑 */
+  background: #000;
   color: var(--text-primary);
   line-height: 1.5;
 }
 
 a {
-  color: var(--color-primary);
+  color: inherit;
   text-decoration: none;
 }
 
@@ -37,12 +45,16 @@ ul, ol {
 
 img {
   max-width: 100%;
-  height: auto;
 }
 
-/* 滚动条样式 */
+button {
+  font-family: inherit;
+}
+
+/* 滚动条：细、半透明、悬浮感 */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -50,10 +62,18 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ===== 通用玻璃面板 ===== */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: var(--panel-radius);
 }

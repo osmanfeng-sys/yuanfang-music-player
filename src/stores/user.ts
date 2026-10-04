@@ -4,6 +4,9 @@ import { STORAGE_PREFIX, MAX_HISTORY } from '@/utils/constants'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+/** 主背景模式：默认壁纸 / 当前封面模糊 / 纯黑 */
+export type BgMode = 'wallpaper' | 'cover' | 'black'
+
 interface SavedSession {
   queue: string[]
   currentIndex: number
@@ -31,6 +34,7 @@ export const useUserStore = defineStore('user', () => {
   // ===== State（从 localStorage 加载） =====
 
   const theme = ref<ThemeMode>(loadJSON<ThemeMode>('theme', 'system'))
+  const bgMode = ref<BgMode>(loadJSON<BgMode>('bgMode', 'wallpaper'))
   const playHistory = ref<string[]>(loadJSON<string[]>('history', []))
   const favorites = ref<string[]>(loadJSON<string[]>('favorites', []))
   const favoritePlaylists = ref<string[]>(loadJSON<string[]>('favPlaylists', []))
@@ -40,6 +44,7 @@ export const useUserStore = defineStore('user', () => {
   // ===== 自动持久化 =====
 
   watch(theme, (v) => saveJSON('theme', v))
+  watch(bgMode, (v) => saveJSON('bgMode', v))
   watch(playHistory, (v) => saveJSON('history', v))
   watch(favorites, (v) => saveJSON('favorites', v))
   watch(favoritePlaylists, (v) => saveJSON('favPlaylists', v))
@@ -79,6 +84,10 @@ export const useUserStore = defineStore('user', () => {
     theme.value = mode
   }
 
+  function setBgMode(mode: BgMode) {
+    bgMode.value = mode
+  }
+
   function addToHistory(trackId: string) {
     // 去重：移除已存在的相同 ID
     playHistory.value = playHistory.value.filter((id) => id !== trackId)
@@ -113,6 +122,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     // State
     theme,
+    bgMode,
     playHistory,
     favorites,
     favoritePlaylists,
@@ -125,6 +135,7 @@ export const useUserStore = defineStore('user', () => {
     // Actions
     init,
     setTheme,
+    setBgMode,
     addToHistory,
     toggleFavorite,
     saveSession,
