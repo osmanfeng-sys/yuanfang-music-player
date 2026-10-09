@@ -12,7 +12,7 @@
     "lyrics:upload": "node --env-file-if-exists=.env upload-lyrics.mjs",
     "deploy:pages": "wrangler pages deploy dist --project-name=yuanfang-music",
     "deploy:worker": "npm run worker:build && wrangler deploy worker/dist/worker.js --name music-proxy",
-    "deploy:local": "powershell -File deploy.bat",
+    "deploy:local": "powershell -File deploy-code.bat",
     "worker:build": "cd worker && npm run build",
     "worker:dev": "wrangler dev worker/src/index.ts",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{force:true,recursive:true})\"",
