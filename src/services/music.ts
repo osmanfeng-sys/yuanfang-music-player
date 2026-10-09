@@ -24,8 +24,9 @@ function extractFolder(url: string): string | undefined {
 export function normalizeTrack(raw: {
   name?: string
   url: string
-  type: string
+  type?: string
   album?: string
+  duration?: number
 }): Track | null {
   const name = raw.name
   if (!name) return null
@@ -42,7 +43,9 @@ export function normalizeTrack(raw: {
     // album 由 Worker 下发（R2 一级目录派生），未部署新版 Worker 时前端兜底
     album: raw.album || extractFolder(raw.url)?.replace(/^\d+[_-]/, ''),
     folder: extractFolder(raw.url),
-    type: 'hls'
+    // mp3 走原生播放，hls 交给 hls.js —— APlayer 按 URL 自己判断，这里只做标记
+    type: raw.type === 'mp3' || /\.mp3$/i.test(raw.url) ? 'mp3' : 'hls',
+    ...(raw.duration ? { duration: raw.duration } : {})
   }
 }
 

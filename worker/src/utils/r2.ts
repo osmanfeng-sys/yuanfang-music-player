@@ -79,5 +79,6 @@ export interface Track {
   id: string
   name: string
   url: string
-  type: 'hls'
+  type: 'hls' | 'mp3'
+  duration?: number
 }

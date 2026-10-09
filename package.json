@@ -10,6 +10,7 @@
     "generate:playlist": "node --env-file=.env list-r2.cjs",
     "lyrics:list": "node --env-file-if-exists=.env upload-lyrics.mjs --list",
     "lyrics:upload": "node --env-file-if-exists=.env upload-lyrics.mjs",
+    "music:upload": "node --env-file-if-exists=.env upload-music.mjs",
     "deploy:pages": "wrangler pages deploy dist --project-name=yuanfang-music",
     "deploy:worker": "npm run worker:build && wrangler deploy worker/dist/worker.js --name music-proxy",
     "deploy:local": "powershell -File deploy-code.bat",

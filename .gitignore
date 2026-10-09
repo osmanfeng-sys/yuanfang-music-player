@@ -19,6 +19,9 @@ package-lock.json.old
 # 项目记忆（含运维细节，仓库是公开的，不上传）
 memory.md
 
+# 待上传的音乐原文件（有版权，且体积大）—— music:upload 的源目录
+music/
+
 # Cloudflare 环境
 .wrangler/
 

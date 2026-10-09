@@ -99,19 +99,24 @@ export function normalizeTrack(raw: {
   url: string
   type?: string
   album?: string
+  duration?: number
 }): Track | null {
   if (!raw.name) return null
   const name = raw.name
   const url = raw.url
   if (!url) return null
 
+  // 老 playlist.json 里没有 type 字段，按 URL 后缀兜底判断，别一律当 hls
+  const type: 'hls' | 'mp3' = raw.type === 'mp3' || /\.mp3$/i.test(url) ? 'mp3' : 'hls'
+
   return {
     id: generateTrackId(name),
     name,
     url,
-    type: 'hls',
+    type,
     // playlist.json 里显式带了 album 就用它，否则从路径派生
-    album: raw.album || albumFromUrl(url)
+    album: raw.album || albumFromUrl(url),
+    ...(raw.duration ? { duration: raw.duration } : {})
   }
 }
 

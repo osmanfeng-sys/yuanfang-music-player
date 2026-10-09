@@ -3,9 +3,12 @@ export interface Track {
   id: string
   name: string
   url: string
-  type: 'hls'
+  /** hls = 老的分片（playlist.m3u8，走 hls.js）；mp3 = 直传的原文件（走原生 Range 流式） */
+  type: 'hls' | 'mp3'
   /** 专辑名：取自 R2 一级目录（音乐夹），去掉 "01_" 序号前缀 */
   album?: string
+  /** 时长（秒）：mp3 由 upload-music.mjs 写进 durations.json，HLS 没有（前端解析 m3u8 补） */
+  duration?: number
 }
 
 /** 艺人 */

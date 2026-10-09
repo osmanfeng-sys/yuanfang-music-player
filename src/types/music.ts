@@ -18,10 +18,10 @@ export interface Track {
   cover?: string
   /** 歌词文件 URL（可选） */
   lyricsUrl?: string
-  /** 时长（秒），初始未知，播放后获取 */
+  /** 时长（秒）：mp3 由索引下发，HLS 靠解析 m3u8 或播放后回填 */
   duration?: number
-  /** 媒体类型 */
-  type: 'hls'
+  /** 媒体类型：hls = 老的分片；mp3 = 直传原文件（原生 Range 流式） */
+  type: 'hls' | 'mp3'
 }
 
 /** 艺人 */

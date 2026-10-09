@@ -164,7 +164,8 @@ export const usePlaylistStore = defineStore('playlist', () => {
    * 并发压到 2，并由调用方延迟启动 —— 别和正在播放的分片抢带宽。
    */
   async function fillDurations(tracks: Track[], concurrency = 2): Promise<void> {
-    const pending = tracks.filter((t) => t.duration == null)
+    // mp3 的时长由索引（durations.json）下发，m3u8 才有 #EXTINF 可解析
+    const pending = tracks.filter((t) => t.duration == null && t.type === 'hls')
     const worker = async () => {
       for (;;) {
         const t = pending.shift()

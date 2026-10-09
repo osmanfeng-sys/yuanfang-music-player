@@ -177,7 +177,9 @@ watch(
         artist: t.artist,
         url: t.url,
         cover: t.cover || '',
-        type: 'hls',
+        // ⚠️ 只有 hls 才显式给 type：APlayer 收到 `type: 'mp3'` 会【静默不设 src】，
+        // 省略 type 时它按 URL 自己判断 —— mp3 走原生 <audio>，m3u8 走 hls.js
+        ...(t.type === 'hls' ? { type: 'hls' } : {}),
         // 有歌词文件时交给 APlayer 解析（lrcType: 3 即 URL 形式）
         ...(t.lyricsUrl ? { lrc: t.lyricsUrl } : {})
       }))
