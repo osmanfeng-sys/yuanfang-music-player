@@ -151,11 +151,13 @@ export const usePlayerStore = defineStore('player', () => {
     lyricLines.value = lines
   }
 
+  /**
+   * 设置播放模式。
+   * 只改 ref —— APlayer 没有 mode() 方法，也没有 order/loop setter，
+   * 实际下发由 MusicPlayer 里对 playMode 的 watch 写 ap.options 完成。
+   */
   function setPlayMode(mode: PlayMode) {
     playMode.value = mode
-    if (aplayerInstance.value) {
-      aplayerInstance.value.mode(mode === 'shuffle' ? 'random' : 'list')
-    }
   }
 
   /** 追加到队列末尾 */

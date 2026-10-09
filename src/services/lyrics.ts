@@ -84,29 +84,12 @@ async function fetchFromLrclib(track: Track): Promise<{ synced?: string; plain?:
   }
 }
 
-/** 保存歌词到云端 */
-async function saveCloud(
-  track: Track,
-  payload: { synced?: string; plain?: string }
-): Promise<void> {
-  try {
-    await fetch(`${WORKER_BASE_URL}/api/lyrics/${encodeURIComponent(track.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: 'lrclib',
-        artist: track.artist,
-        title: track.title,
-        ...payload
-      })
-    })
-  } catch {
-    // 云端保存失败不阻塞播放
-  }
-}
-
 /**
- * 加载歌词：本地缓存 → 云端 → 在线匹配（命中后回写云端 + 本地）
+ * 加载歌词：本地缓存 → 云端（R2，人工上传）→ 在线匹配（lrclib）
+ *
+ * 只读不写：R2 上的歌词由 `upload-lyrics.mjs` 在本机用 R2 S3 密钥直写，
+ * 服务端没有任何写入接口，所以网页端也写不进来。
+ * 在线匹配到的结果只落 localStorage，不回写云端。
  */
 export async function loadLyrics(track: Track): Promise<LyricLine[]> {
   const cached = readCache(track.id)
@@ -125,6 +108,5 @@ export async function loadLyrics(track: Track): Promise<LyricLine[]> {
   if (lines.length === 0) return []
 
   writeCache(track.id, lines)
-  saveCloud(track, online)
   return lines
 }

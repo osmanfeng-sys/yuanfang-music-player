@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useUserStore } from '@/stores/user'
-import SearchBar from '@/components/search/SearchBar.vue'
 
 const userStore = useUserStore()
 
@@ -31,9 +30,7 @@ function toggleTheme() {
       </nav>
     </div>
 
-    <div class="header__center">
-      <SearchBar />
-    </div>
+    <span class="header__spacer" />
 
     <div class="header__right">
       <button
@@ -125,16 +122,9 @@ function toggleTheme() {
   color: #fff;
 }
 
-.header__center {
+/* 顶栏中部留白：搜索框已移除，核心入口在主页按钮条（对齐参考站） */
+.header__spacer {
   flex: 1;
-  display: flex;
-  justify-content: center;
-  min-width: 0;
-}
-
-.header__center :deep(*) {
-  max-width: 420px;
-  width: 100%;
 }
 
 .header__right {

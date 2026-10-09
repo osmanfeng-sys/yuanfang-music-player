@@ -13,7 +13,7 @@ import {
   handleUpdatePlaylist,
   handleDeletePlaylist
 } from './routes/playlists'
-import { handleGetLyrics, handlePutLyrics } from './routes/lyrics'
+import { handleGetLyrics } from './routes/lyrics'
 import type { Env, RouteHandler } from './utils/types'
 
 /** 路由表：方法+路径模式 → 处理器 */
@@ -41,9 +41,8 @@ const routes: Array<{
   // 搜索
   { pattern: /^\/api\/search$/, methods: ['GET'], handler: handleSearch as RouteHandler },
 
-  // 歌词（云端缓存）
+  // 歌词（云端缓存，只读；上传走本机脚本直写 R2）
   { pattern: /^\/api\/lyrics\/(.+)$/, methods: ['GET'], handler: (req, env, key) => handleGetLyrics(req, env, key) },
-  { pattern: /^\/api\/lyrics\/(.+)$/, methods: ['PUT'], handler: (req, env, key) => handlePutLyrics(req, env, key) },
 
   // R2 文件代理（兜底路由，放在最后）
   { pattern: /^\/.+$/, methods: ['GET', 'HEAD'], handler: handleProxy as RouteHandler },

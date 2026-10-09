@@ -70,11 +70,28 @@ export function extractParam(path: string, prefix: string): string | null {
   return rest.replace(/\/$/, '') || null
 }
 
+/**
+ * 从媒资 URL 取专辑名。
+ *
+ * R2 目录结构为 "<音乐夹>/<曲目名>/playlist.m3u8"，没有独立的专辑层级，
+ * 因此把一级目录去掉 "01_" 这类序号前缀后当作专辑名。
+ * 放在 Worker 侧派生，老 playlist.json 无需重扫即可生效。
+ */
+function albumFromUrl(url: string): string | undefined {
+  try {
+    const seg = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean)[0]
+    return seg ? seg.replace(/^\d+[_-]/, '') : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** 标准化 Track 对象（从原始 playlist.json 数据） */
 export function normalizeTrack(raw: {
   name?: string
   url: string
   type?: string
+  album?: string
 }): Track | null {
   if (!raw.name) return null
   const name = raw.name
@@ -85,16 +102,24 @@ export function normalizeTrack(raw: {
     id: generateTrackId(name),
     name,
     url,
-    type: 'hls'
+    type: 'hls',
+    // playlist.json 里显式带了 album 就用它，否则从路径派生
+    album: raw.album || albumFromUrl(url)
   }
 }
 
-/** 从 name 生成稳定的 ID */
+/**
+ * 从原始曲目名生成稳定的 ID（FNV-1a 64 位哈希的 16 位十六进制）。
+ *
+ * 必须与前端 `src/utils/parser.ts` 的 generateTrackId 完全一致：
+ * 前端拿这个 ID 拼歌词 key，对不上就读不到云端歌词。
+ */
 function generateTrackId(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9一-鿿]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '')
-    .slice(0, 100)
+  const PRIME = 0x100000001b3n
+  const MASK = 0xffffffffffffffffn
+  let h = 0xcbf29ce484222325n
+  for (let i = 0; i < name.length; i++) {
+    h = ((h ^ BigInt(name.charCodeAt(i))) * PRIME) & MASK
+  }
+  return h.toString(16).padStart(16, '0')
 }

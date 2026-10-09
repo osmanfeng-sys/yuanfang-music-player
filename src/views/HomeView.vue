@@ -81,6 +81,22 @@ const searchResults = computed(() =>
   keyword.value.trim() ? playlistStore.searchTracks(keyword.value) : []
 )
 
+/** 专辑列：Track.album 目前未从 Worker 下发，回退到音乐夹名（去掉 "01_" 序号前缀） */
+function albumOf(t: Track): string {
+  return t.album || t.folder?.replace(/^\d+[_-]/, '') || '—'
+}
+
+/** 当前列表条数（音乐夹一级列表不算曲目列表，不显示列头） */
+const listCount = computed(() => {
+  if (activeTab.value === 'playing') return queue.value.length
+  if (activeTab.value === 'playlist') {
+    return openedFolder.value === null ? 0 : openedTracks.value.length
+  }
+  return searchResults.value.length
+})
+
+const showListHead = computed(() => !loading.value && !error.value && listCount.value > 0)
+
 // ===== 播放 =====
 
 function playFrom(list: Track[], track: Track) {
@@ -231,6 +247,15 @@ watch(
           @retry="loadMusic"
         />
 
+        <!-- 列头：复用行内类名，保证三列对齐 -->
+        <div v-if="showListHead" class="home__head">
+          <span class="home__row-num">#</span>
+          <span class="home__row-title">歌名</span>
+          <span class="home__row-artist">歌手</span>
+          <span class="home__row-album">专辑</span>
+          <span class="home__row-dur">时长</span>
+        </div>
+
         <!-- 正在播放 -->
         <template v-else-if="activeTab === 'playing'">
           <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放列表」挑一首吧</p>
@@ -244,6 +269,7 @@ watch(
             <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
             <span class="home__row-title">{{ track.title }}</span>
             <span class="home__row-artist">{{ track.artist }}</span>
+            <span class="home__row-album">{{ albumOf(track) }}</span>
             <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
           </div>
         </template>
@@ -283,6 +309,7 @@ watch(
               <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
               <span class="home__row-title">{{ track.title }}</span>
               <span class="home__row-artist">{{ track.artist }}</span>
+              <span class="home__row-album">{{ albumOf(track) }}</span>
               <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
             </div>
           </template>
@@ -312,6 +339,7 @@ watch(
             <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
             <span class="home__row-title">{{ track.title }}</span>
             <span class="home__row-artist">{{ track.artist }}</span>
+            <span class="home__row-album">{{ albumOf(track) }}</span>
             <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
           </div>
         </template>
@@ -333,7 +361,7 @@ watch(
       </div>
 
       <p class="home__song-artist">
-        {{ playerStore.currentTrack?.artist ?? '从左侧列表选择歌曲' }}
+        {{ playerStore.currentTrack?.artist ?? '从列表选择歌曲' }}
       </p>
 
       <div ref="lyricBox" class="home__lyric">
@@ -364,7 +392,7 @@ watch(
           <p><b>歌曲搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
           <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
           <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
-          <p><b>快捷键</b>：拖动底部进度条可跳转，悬停喇叭图标可调音量；上下首、循环模式在底部控制条。</p>
+          <p><b>快捷键</b>：拖动底部进度条可跳转，音量条直接拖动调节；上下首、循环/单曲/随机在底部控制条。</p>
           <p class="home__modal-note">音频来自 Cloudflare R2，按需切片（HLS），首次播放会有短暂缓冲。</p>
         </div>
       </div>
@@ -374,6 +402,7 @@ watch(
 
 <style scoped>
 .home {
+  position: relative;
   display: flex;
   gap: var(--spacing-md);
   height: 100%;
@@ -519,6 +548,22 @@ watch(
   user-select: none;
 }
 
+/* 列头：复用行内类名，保证「歌名 / 歌手 / 专辑」三列与行严格对齐 */
+.home__head {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  font-size: 11px;
+  color: var(--text-faint);
+  user-select: none;
+}
+
+.home__head .home__row-artist,
+.home__head .home__row-album,
+.home__head .home__row-dur {
+  color: var(--text-faint);
+}
+
 .home__row {
   display: flex;
   align-items: center;
@@ -568,10 +613,20 @@ watch(
 }
 
 .home__row-artist {
-  width: 180px;
+  width: 200px;
   flex-shrink: 0;
   padding-right: 12px;
   color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home__row-album {
+  width: 240px;
+  flex-shrink: 0;
+  padding-right: 12px;
+  color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -779,18 +834,22 @@ watch(
   color: var(--text-faint);
 }
 
-/* ===== 移动端 ===== */
+/* ===== 移动端：先收右侧面板，再依次收起专辑列 → 歌手列 ===== */
 @media (max-width: 900px) {
   .home__player {
     display: none;
+  }
+  .home__row-album {
+    display: none;
+  }
+  .home__row-artist {
+    width: 140px;
   }
 }
 
 @media (max-width: 639px) {
   .home__row-artist {
-    width: 0;
-    padding: 0;
-    overflow: hidden;
+    display: none;
   }
   .home__tab {
     padding: 4px 12px;

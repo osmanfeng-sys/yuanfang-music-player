@@ -40,14 +40,27 @@ export function extractNameFromPath(path: string): string {
 }
 
 /**
- * 生成稳定的 Track ID。
- * 格式: encodeURIComponent("artist_title").toLowerCase() 的简化 slug
+ * 生成稳定的 Track ID：对**原始曲目名**做 FNV-1a 64 位哈希，输出 16 位十六进制。
+ *
+ * 为什么不用 "artist_title" slug：parseTrackName 会剥掉 "[mqms2]" 这类后缀，
+ * 于是同一首歌的重复上传算成同一个 ID（实测 7 组 / 14 首撞车，播一首会同时高亮两行）。
+ * 哈希吃的是未经解析的原始 name，天然唯一。
+ *
+ * 附带好处：输出纯 ASCII，做 R2 的歌词 key 时 percent-encode 是空操作，
+ * 中文曲目不会再写成一堆 %E9%83%91... 的 key。
+ *
+ * 注意：Worker 侧 `worker/src/utils/response.ts` 有同名同算法的副本，
+ * 两处必须保持一致，否则前端算出的歌词 key 会读不到云端歌词。
+ *
+ * ponytail: 非加密哈希。5000 首规模碰撞概率约 7e-13，够用；
+ * 真需要更强就换 SHA-256，代价是整条链路要异步化。
  */
-export function generateTrackId(artist: string, title: string): string {
-  const raw = `${artist}_${title}`
-    .toLowerCase()
-    .replace(/[^a-z0-9_一-鿿]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '')
-  return raw.slice(0, 100)
+export function generateTrackId(rawName: string): string {
+  const PRIME = 0x100000001b3n
+  const MASK = 0xffffffffffffffffn
+  let h = 0xcbf29ce484222325n
+  for (let i = 0; i < rawName.length; i++) {
+    h = ((h ^ BigInt(rawName.charCodeAt(i))) * PRIME) & MASK
+  }
+  return h.toString(16).padStart(16, '0')
 }

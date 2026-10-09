@@ -190,15 +190,14 @@ watch(
 )
 
 // 监听播放模式
+// APlayer 运行时直接读 options.order / options.loop（实例上没有 order/loop setter），
+// 所以必须写 options，写 ap.order 会被忽略。
 watch(
   () => playerStore.playMode,
   (mode: PlayMode) => {
     if (!ap) return
-    if (mode === 'shuffle') {
-      ap.order = 'random'
-    } else {
-      ap.order = 'list'
-    }
+    ap.options.order = mode === 'shuffle' ? 'random' : 'list'
+    ap.options.loop = mode === 'single-repeat' ? 'one' : 'all'
   }
 )
 

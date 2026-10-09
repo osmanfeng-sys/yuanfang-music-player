@@ -4,6 +4,8 @@ export interface Track {
   name: string
   url: string
   type: 'hls'
+  /** 专辑名：取自 R2 一级目录（音乐夹），去掉 "01_" 序号前缀 */
+  album?: string
 }
 
 /** 艺人 */

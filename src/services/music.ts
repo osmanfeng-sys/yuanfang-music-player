@@ -18,18 +18,22 @@ function normalizeTrack(raw: {
   name?: string
   url: string
   type: string
+  album?: string
 }): Track | null {
   const name = raw.name
   if (!name) return null
 
   const { artist, title } = parseTrackName(name)
-  const id = generateTrackId(artist, title)
+  // ID 对原始 name 取哈希：解析会剥掉 "[mqms2]" 等后缀，据此算 ID 会撞车
+  const id = generateTrackId(name)
 
   return {
     id,
     title,
     artist,
     url: raw.url,
+    // album 由 Worker 下发（R2 一级目录派生），未部署新版 Worker 时前端兜底
+    album: raw.album || extractFolder(raw.url)?.replace(/^\d+[_-]/, ''),
     folder: extractFolder(raw.url),
     type: 'hls'
   }
