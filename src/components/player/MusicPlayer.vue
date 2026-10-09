@@ -87,8 +87,16 @@ onMounted(() => {
   })
 
   // 曲目切换时：同步索引 + 自动继续播放 + 更新时长
-  ap.on('listswitch', () => {
-    if (ap) {
+  //
+  // ⚠️ 索引只能取事件参数里的 index，不能在回调里读 ap.list.index：
+  //    APlayer 的 list.switch() 是「先 trigger('listswitch', {index})，后 this.index = index」，
+  //    回调执行时 ap.list.index 还是【旧】值 —— 用它会把 store.currentIndex 回滚成上一首。
+  //    症状：声音切了，但底栏歌名 / 右侧面板歌名 / 歌词全部停在旧歌；next 要点两次才生效
+  //    （第一次切了声音但 currentIndex 被回滚，next 又算出同一个目标索引）。
+  ap.on('listswitch', (e: { index?: number } = {}) => {
+    if (typeof e.index === 'number') {
+      playerStore.currentIndex = e.index
+    } else if (ap) {
       playerStore.currentIndex = ap.list.index
     }
     nextTick(() => {
