@@ -13,8 +13,15 @@ function extractFolder(url: string): string | undefined {
   }
 }
 
-/** 从 Raw Track 数据（含有 name 字段）解析为标准的 Track 对象 */
-function normalizeTrack(raw: {
+/**
+ * 从 Raw Track 数据（含有 name 字段）解析为标准的 Track 对象。
+ *
+ * Worker 的 /list 返回的是 `{id, name, url, type, album}` ——
+ * **没有 title / artist / folder**，必须过这一层才有。
+ * 所以导出给 playlist store 复用：store 直接吃 /list 原始对象的话，
+ * 歌名歌手全是 undefined（歌照放，因为播放只用 url），列表和底栏会一片空白。
+ */
+export function normalizeTrack(raw: {
   name?: string
   url: string
   type: string

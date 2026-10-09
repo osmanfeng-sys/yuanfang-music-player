@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { WORKER_BASE_URL } from '@/utils/constants'
+import { normalizeTrack } from '@/services/music'
 import type { Track, Artist, Playlist } from '@/types'
 
 export const usePlaylistStore = defineStore('playlist', () => {
@@ -110,14 +111,19 @@ export const usePlaylistStore = defineStore('playlist', () => {
     try {
       const res = await fetch(`${WORKER_BASE_URL}/list`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const tracks: Track[] = await res.json()
+      const raw = (await res.json()) as { name?: string; url: string; type: string }[]
+
+      // /list 给的是 {name, url, type, album} 原始对象，没有 title/artist/folder，
+      // 必须过 normalizeTrack —— 直接当 Track 用的话歌名歌手全是 undefined，
+      // 表现为「歌能放，但列表和底栏一片空白」
+      const tracks = raw
+        .map((item) => normalizeTrack(item))
+        .filter((t): t is Track => t !== null)
 
       // 填入 trackCache
       const cache: Record<string, Track> = {}
       for (const track of tracks) {
-        if (track.id) {
-          cache[track.id] = track
-        }
+        cache[track.id] = track
       }
       trackCache.value = cache
 
