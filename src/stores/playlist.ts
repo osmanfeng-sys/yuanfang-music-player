@@ -44,6 +44,19 @@ export const usePlaylistStore = defineStore('playlist', () => {
     )
   })
 
+  /** 艺人分组（按曲目数降序），首页用它挑默认歌单 */
+  const artists = computed(() => {
+    const map = new Map<string, Track[]>()
+    for (const t of Object.values(trackCache.value)) {
+      const list = map.get(t.artist)
+      if (list) list.push(t)
+      else map.set(t.artist, [t])
+    }
+    return Array.from(map, ([name, tracks]) => ({ name, tracks })).sort(
+      (a, b) => b.tracks.length - a.tracks.length
+    )
+  })
+
   function getPlaylistById(id: string): Playlist | undefined {
     return playlists.value[id]
   }
@@ -189,6 +202,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     userPlaylists,
     allTracks,
     folders,
+    artists,
     getPlaylistById,
     getTrackById,
     getTracksByArtist,

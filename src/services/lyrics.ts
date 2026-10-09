@@ -85,21 +85,35 @@ async function fetchFromLrclib(track: Track): Promise<{ synced?: string; plain?:
 }
 
 /**
- * 加载歌词：本地缓存 → 云端（R2，人工上传）→ 在线匹配（lrclib）
+ * 本次会话内已确认「云端没有这首歌的歌词」的曲目。
+ *
+ * 云端优先的代价是每切一首歌多问一次 R2；而 lyrics/ 目前大多数歌都还没有，
+ * 不记一下就会反复问空。代价：本次会话内新上传的歌词要刷新页面才生效。
+ * ponytail: 会话级内存记录，不做持久化；真需要热更新就改成带 TTL 的 localStorage。
+ */
+const cloudMiss = new Set<string>()
+
+/**
+ * 加载歌词：云端（R2，人工上传）→ 本地缓存 → 在线匹配（lrclib）
+ *
+ * 云端优先：R2 上的歌词是人工核对过的，可信度最高，放最前面才能让重新上传立即可见。
+ * 本地缓存退居其后，只作为离线/加速兜底，不再挡住云端更新。
  *
  * 只读不写：R2 上的歌词由 `upload-lyrics.mjs` 在本机用 R2 S3 密钥直写，
  * 服务端没有任何写入接口，所以网页端也写不进来。
- * 在线匹配到的结果只落 localStorage，不回写云端。
  */
 export async function loadLyrics(track: Track): Promise<LyricLine[]> {
+  if (!cloudMiss.has(track.id)) {
+    const cloud = await fetchCloud(track.id)
+    if (cloud) {
+      writeCache(track.id, cloud)
+      return cloud
+    }
+    cloudMiss.add(track.id)
+  }
+
   const cached = readCache(track.id)
   if (cached) return cached
-
-  const cloud = await fetchCloud(track.id)
-  if (cloud) {
-    writeCache(track.id, cloud)
-    return cloud
-  }
 
   const online = await fetchFromLrclib(track)
   if (!online) return []

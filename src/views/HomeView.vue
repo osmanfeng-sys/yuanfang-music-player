@@ -52,10 +52,32 @@ async function loadMusic() {
   await playlistStore.fetchPlaylists()
 }
 
-onMounted(() => {
-  // 队列为空时落在「播放列表」，否则首次进来只看得到「正在播放」的空状态
-  if (playerStore.queue.length === 0) activeTab.value = 'playlist'
-  void loadMusic()
+/**
+ * 首屏没有队列时，用曲目最多的艺人的歌单填充队列并起播第一首。
+ *
+ * 浏览器自动播放策略：没有用户手势时（首次访问、硬刷新）play() 会被拒绝。
+ * 1.2s 后音频仍是暂停就把 isPlaying 改回 false，免得按钮显示成「暂停中」
+ * 而实际没在放，让人以为卡住了。
+ */
+function seedQueue() {
+  if (playerStore.queue.length > 0) return
+  const tracks = playlistStore.artists[0]?.tracks
+  if (!tracks?.length) return
+
+  playerStore.setQueue(tracks, 0)
+  playerStore.isPlaying = true
+
+  setTimeout(() => {
+    const audio = playerStore.aplayerInstance?.audio as HTMLAudioElement | undefined
+    if (audio?.paused) playerStore.isPlaying = false
+  }, 1200)
+}
+
+onMounted(async () => {
+  await loadMusic()
+  seedQueue()
+  // 起播没成功（曲库为空或加载失败）就落在「播放列表」，别让首屏是一片空白
+  if (!playerStore.currentTrack) activeTab.value = 'playlist'
 })
 
 // ===== 数据 =====
@@ -385,6 +407,7 @@ watch(
           <p><b>歌曲搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
           <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
           <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
+          <p><b>自动播放</b>：首次进入会用曲目最多的艺人歌单填充队列并尝试播放；若浏览器拦截了自动播放，点一下播放键即可。</p>
           <p><b>快捷键</b>：拖动底部进度条可跳转，音量条直接拖动调节；上下首、循环/单曲/随机在底部控制条。</p>
           <p class="home__modal-note">音频来自 Cloudflare R2，按需切片（HLS），首次播放会有短暂缓冲。</p>
         </div>
