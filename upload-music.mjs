@@ -91,38 +91,57 @@ if (argv.length === 0) {
     }
     return rl.question('')
   }
-
-  srcDir = clean(
-    await ask('源路径（音乐文件夹或单个 mp3，可把文件直接拖进本窗口）:\n> ')
-  )
-  const st = srcDir ? await stat(srcDir).catch(() => null) : null
-  if (!st) {
+  /** 出错就停：给一行明确的原因，别让窗口静静卡住 */
+  const bail = (why) => {
     rl.close()
-    console.error(`\n[Error] 路径不存在：${srcDir || '(空)'}`)
+    console.log(`\n  ✗ ${why}\n  （没有上传任何文件，窗口即将关闭）`)
     process.exit(1)
   }
 
-  console.log(
-    st.isFile()
-      ? '\n单个文件必须指定音乐夹 —— 否则会落在 R2 根目录，列表里归入「未分类」。'
-      : '\n音乐夹名留空 = 用本地目录名映射（D:\\传\\05_郑源\\x.mp3 → R2 的 05_郑源/x.mp3）'
-  )
-  const answer = clean(await ask('音乐夹名（如 06_网络歌曲）:\n> '))
+  console.log('╔═══════════════════════════════════════════════╗')
+  console.log('║   远方音乐 —— 上传 mp3 到 R2                  ║')
+  console.log('╚═══════════════════════════════════════════════╝')
+  console.log()
+
+  // ── 第 1 步：源路径 ──
+  console.log('【1/3】源路径')
+  console.log('  把【文件夹】或【单个 mp3】直接拖进本窗口，然后按回车；')
+  console.log('  拖不进来也可以直接粘贴路径。整批上传就拖文件夹。')
+  srcDir = clean(await ask('  路径 > '))
+  if (!srcDir) bail('没有输入路径。')
+  const st = await stat(srcDir).catch(() => null)
+  if (!st) bail(`路径不存在：${srcDir}`)
+  const preview = st.isFile() ? [srcDir] : await findMp3(srcDir)
+  if (preview.length === 0) bail(`这个路径下没有 .mp3 文件：${srcDir}`)
+  console.log(`  ✓ 路径有效，找到 ${preview.length} 首 mp3`)
+  console.log()
+
+  // ── 第 2 步：音乐夹 ──
+  console.log('【2/3】目标音乐夹（决定歌单里归到哪一类）')
+  const existing = await listExistingFolders()
+  if (existing.length) console.log(`  现有：${existing.join('  ')}`)
+  if (st.isFile()) {
+    console.log('  单个文件必须填一个夹名，否则会落到 R2 根目录、列表里归入「未分类」。')
+  } else {
+    console.log('  留空 = 按本地目录名映射（D:\\传\\05_郑源\\x.mp3 → R2 的 05_郑源/x.mp3）')
+  }
+  const answer = clean(await ask('  音乐夹名 > '))
   if (answer) folder = answer
-  if (st.isFile() && !folder) {
-    rl.close()
-    console.error('\n[取消] 单个文件没有指定音乐夹。')
-    process.exit(1)
+  if (st.isFile() && !folder) bail('单个文件必须指定音乐夹。')
+  if (folder && existing.length && !existing.includes(folder)) {
+    console.log(`  ! 「${folder}」不在现有列表里，会新建一个音乐夹（检查下有没有写错字）`)
   }
+  console.log(`  ✓ 目标：${folder ? `音乐夹「${folder}」` : '按本地目录名映射到 R2'}`)
+  console.log()
 
-  const ok = clean(
-    await ask(
-      `\n源  ：${srcDir}\n目标：${folder ? `音乐夹「${folder}」` : '按本地目录名映射到 R2'}\n确认上传？(Y/N) > `
-    )
-  )
+  // ── 第 3 步：确认 ──
+  console.log('【3/3】确认')
+  console.log(`  源  ：${srcDir}`)
+  console.log(`  数量：${preview.length} 首`)
+  const ok = clean(await ask('  开始上传？(Y/N) > '))
   rl.close()
   if (!/^y(es)?$/i.test(ok)) {
-    console.log('[取消]')
+    console.log('\n  [取消] 没有上传任何文件。')
     process.exit(0)
   }
   console.log()
@@ -170,6 +189,21 @@ async function stripCover(file, out) {
   await run('ffmpeg', ['-y', '-v', 'error', '-i', file, '-map', '0:a', '-c:a', 'copy', '-vn', out])
 }
 
+/** 从本地 playlist.json 取现有音乐夹名，给交互提示用（读不到就返回空） */
+async function listExistingFolders() {
+  try {
+    const raw = JSON.parse(await readFile(join(import.meta.dirname, 'playlist.json'), 'utf8'))
+    const set = new Set()
+    for (const t of raw) {
+      const seg = decodeURIComponent(new URL(t.url).pathname).split('/').filter(Boolean)[0]
+      if (seg) set.add(seg)
+    }
+    return [...set].sort()
+  } catch {
+    return []
+  }
+}
+
 /** 读 R2 上已有的 durations.json，读不到就返回空表 */
 async function loadDurations() {
   try {
@@ -208,7 +242,12 @@ if (isSingleFile && !folder) {
 console.log(
   `${dryRun ? '[dry-run] ' : ''}源${isSingleFile ? '文件' : '目录'}：${srcDir}    找到 ${files.length} 首`
 )
-console.log(`目标位置：${folder ? `音乐夹「${folder}」下` : '按本地目录结构原样映射'}\n`)
+console.log(`目标位置：${folder ? `音乐夹「${folder}」下` : '按本地目录结构原样映射'}`)
+console.log(
+  dryRun
+    ? '\n── 预览（不会写入任何东西）──\n'
+    : `\n── 开始上传 ${files.length} 首（并发 ${CONCURRENCY}，中途可 Ctrl+C 中断）──\n`
+)
 
 const tmp = await mkdtemp(join(tmpdir(), 'ym-upload-'))
 const durations = await loadDurations()
@@ -300,17 +339,28 @@ if (!dryRun && uploaded.length > 0) {
 
 await rm(tmp, { recursive: true, force: true })
 
-console.log(`\n${dryRun ? '[dry-run] ' : ''}成功 ${uploaded.length} / ${files.length}`)
+console.log('\n════════════════════════════════════════════════')
+console.log(`  ${dryRun ? '[dry-run] 预览完成' : '上传结束'}：成功 ${uploaded.length} / ${files.length}`)
+console.log('════════════════════════════════════════════════')
 
 if (warnings.length) {
-  console.log('\n注意：')
-  for (const w of warnings) console.log(`! ${w}`)
+  console.log('\n注意（不影响已完成的文件）：')
+  for (const w of warnings) console.log(`  ! ${w}`)
 }
 if (problems.length) {
   console.log('\n失败：')
-  for (const [k, why] of problems) console.log(`✗ ${k}  ${why}`)
-  process.exit(1)
+  for (const [k, why] of problems) console.log(`  ✗ ${k}  ${why}`)
+  console.log('\n  失败的可以修好后重跑，已成功的部分不会重复上传（覆盖写入，无副作用）。')
 }
-if (!dryRun) {
-  console.log('\n下一步：npm run generate:playlist  然后 git push 触发部署')
+
+if (!dryRun && uploaded.length > 0 && problems.length === 0) {
+  console.log('\n下一步（二选一）：')
+  console.log('  · 双击 deploy-music.bat —— 重建索引并发布（推荐）')
+  console.log('  · 或手动跑：npm run generate:playlist')
+  console.log('              git add playlist.json && git commit -m "chore: playlist" && git push')
+  console.log('\n  不做这一步的话，新歌已经在 R2 里，但不会出现在网站的列表中。')
+} else if (dryRun) {
+  console.log('\n这是预览，什么都没写。去掉 --dry-run 即真正上传。')
 }
+
+if (problems.length) process.exit(1)
