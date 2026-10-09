@@ -224,28 +224,32 @@ git add -A && git commit -m "..." && git push origin main
 
 > 也可以直接双击 `deploy-code.bat`（本地构建 + 部署 + push），但它做的事 CI 都会做，平时没必要。
 
-### B. 新增 / 删除音乐
-
-R2 里没有自动化上传脚本，**切片与上传目前是本机手工步骤**：
+### B. 新增音乐（mp3 直传，不需要切片）
 
 ```bash
-# 1. 本机切片成 HLS（参考命令，按需调整码率）
-ffmpeg -i input.mp3 -c:a aac -b:a 192k -f hls -hls_time 10 -hls_list_size 0 \
-       -hls_segment_filename "output%03d.ts" playlist.m3u8
+# 1. 一条命令上传（会递归整个目录）
+npm run music:upload -- "D:\待上传" --folder "06_网络歌曲"   # 整个目录传进同一个音乐夹
+npm run music:upload -- "D:\待上传"                        # 本地目录名即音乐夹，层级原样映射
+npm run music:upload -- "D:\待上传" --dry-run               # 先预览不上传
 
-# 2. 上传到 R2（结构必须是 <音乐夹>/<歌手 - 歌名>/）
-#    分片名保持 outputNNN.ts，与现有 262 首一致
-
-# 3. 重建索引（会同时更新本地 playlist.json 并回写 R2）
+# 2. 重建索引（扫 R2 生成 playlist.json 并回写）
 npm run generate:playlist
 
-# 4. 提交索引 + 触发部署
+# 3. 发布
 git add playlist.json && git commit -m "chore: update playlist" && git push
 ```
 
-等价的一键操作：双击 **`deploy-music.bat`**（扫描 R2 → 生成 + 上传 playlist.json → commit → push）。
+上传脚本做的事：**ffprobe 读时长/码率 → `ffmpeg -c:a copy -vn` 剥掉内嵌封面 → 传 R2 → 时长写进 R2 的 `durations.json`**。
+剥封面是无损的（音频流直接 copy），但会去掉内嵌的配图 —— 封面动辄几百 KB 且在文件头部，浏览器得先越过它才能出声。
 
-> `generate:playlist` 生成的条目只有 `{name,url,type}`，没有 `album`/`id`；
+**两条约定**（不合规脚本会警告，但不阻断）：
+- 文件名必须是 `歌手 - 歌名.mp3`，否则列表里艺人显示 `Unknown`
+- 码率 ≤ 192 kbps：国内到 CF 实测约 50 KB/s，320 kbps 会卡顿
+
+老歌仍是 HLS 分片，与新 mp3 在同一条 `/list` 里共存，前端按 URL 后缀自适应。
+（历史遗留：加 HLS 需本机 `ffmpeg -f hls` 切片后按 `<音乐夹>/<曲目名>/playlist.m3u8 + outputNNN.ts` 上传，脚本不再代办。）
+
+> `generate:playlist` 生成的条目只有 `{name,url,type,duration}`，没有 `album`/`id`；
 > Worker 在 `/list` 时会用 `raw.album || albumFromUrl(url)` 和 `generateTrackId(name)` 补齐，**所以不影响功能**。
 
 ### C. 补中文歌词
@@ -346,7 +350,8 @@ WARP 开关脚本：`G:\Program Files\.claude\tools\warp-on.ps1`（由本机工�
 | `npm run build` | `vue-tsc --noEmit` + Vite 构建 → `dist/` |
 | `npm run preview` | 本地预览构建产物 |
 | `npm run test` | Vitest 单元测试 |
-| `npm run generate:playlist` | 扫描 R2 → 生成并回写 `playlist.json` |
+| `npm run music:upload` | 上传 mp3 原文件到 R2（`--folder "夹名"` 指定音乐夹 / `--dry-run` 预览） |
+| `npm run generate:playlist` | 扫描 R2（m3u8 + mp3）→ 生成并回写 `playlist.json` |
 | `npm run lyrics:list` / `lyrics:upload` | 歌词上传工具（本机） |
 | `npm run worker:build` / `worker:dev` | Worker 构建 / 本地调试 |
 | `npm run deploy:pages` | 部署前端到 Pages（`wrangler pages deploy dist`） |
