@@ -14,7 +14,8 @@ export async function handleList(_request: Request, env: Env): Promise<Response>
       .map(normalizeTrack)
       .filter(Boolean)
 
-    return json(tracks)
+    // 60KB 的曲库列表缓存 5 分钟：内容只在重新扫描 R2 后变化
+    return json(tracks, 200, 300)
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown error'
     return error(`Failed to load playlist: ${message}`)

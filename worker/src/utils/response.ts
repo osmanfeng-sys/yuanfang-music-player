@@ -9,15 +9,22 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type'
 }
 
-/** JSON 成功响应 */
-export function json<T>(data: T, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      ...CORS_HEADERS
-    }
-  })
+/**
+ * JSON 成功响应
+ *
+ * cacheSeconds > 0 时下发 Cache-Control。曲库 /list 有 60KB，
+ * 不缓存的话每次进首页 / 艺人页都要重下一遍（国内到 CF 的链路本来就不稳）。
+ * 默认 0 = 不缓存，避免误伤会变的接口。
+ */
+export function json<T>(data: T, status = 200, cacheSeconds = 0): Response {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...CORS_HEADERS
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, max-age=${cacheSeconds}`
+  }
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
 /** 错误响应 */

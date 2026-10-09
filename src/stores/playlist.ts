@@ -120,7 +120,8 @@ export const usePlaylistStore = defineStore('playlist', () => {
         source: 'system'
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '获取播放列表失败'
+      // 网络失败时 e.message 只有 "Failed to fetch"，补一句能落地的提示
+      error.value = e instanceof Error ? `加载曲库失败：${e.message}（网络不稳，可重试）` : '加载曲库失败，请重试'
     } finally {
       loading.value = false
     }

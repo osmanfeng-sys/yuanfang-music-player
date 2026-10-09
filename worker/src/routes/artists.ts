@@ -34,7 +34,8 @@ export async function handleGetArtists(_request: Request, env: Env): Promise<Res
   try {
     const tracks = await fetchAllTracks(env)
     const artists = buildArtists(tracks)
-    return json({ artists })
+    // 与 /list 同源，同样缓存 5 分钟
+    return json({ artists }, 200, 300)
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown error'
     return error(`Failed to get artists: ${message}`)
@@ -61,10 +62,14 @@ export async function handleGetArtistDetail(
       return trackArtist === artist.name
     })
 
-    return json({
-      artist: { ...artist, albums: [] },
-      tracks: artistTracks
-    })
+    return json(
+      {
+        artist: { ...artist, albums: [] },
+        tracks: artistTracks
+      },
+      200,
+      300
+    )
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown error'
     return error(`Failed to get artist detail: ${message}`)

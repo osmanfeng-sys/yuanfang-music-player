@@ -3,7 +3,6 @@ import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { useUserStore } from '@/stores/user'
-import { fetchAllTracks } from '@/services/music'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
@@ -15,8 +14,10 @@ const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
 const userStore = useUserStore()
 
-const loading = ref(true)
-const error = ref<string | null>(null)
+/** 曲库加载状态直接复用 store，不再在本页维护第二份：原来这里吞掉错误，
+ *  /list 一失败就静默显示空列表，既没有报错也没有重试入口 */
+const loading = computed(() => playlistStore.loading)
+const error = computed(() => playlistStore.error)
 
 /** 主菜单：正在播放 / 播放列表 / 歌曲搜索 */
 const activeTab = ref<'playing' | 'playlist' | 'search'>('playing')
@@ -45,25 +46,17 @@ const BG_MODES: { key: 'wallpaper' | 'cover' | 'black'; label: string }[] = [
 ]
 
 async function loadMusic() {
-  loading.value = true
-  error.value = null
-  try {
-    const tracks = await fetchAllTracks()
-    if (tracks.length > 0) {
-      const cache: Record<string, Track> = {}
-      for (const t of tracks) {
-        cache[t.id] = t
-      }
-      playlistStore.trackCache = cache
-    }
-  } catch (e) {
-    error.value = '无法连接到服务器，请检查网络'
-  } finally {
-    loading.value = false
-  }
+  // 曲库已缓存就直接用：原来每次进入首页都重下 60KB 的 /list，
+  // 从艺人页 playTrack() 跳回首页时还会跟刚起播的 HLS 分片抢带宽
+  if (playlistStore.allTracks.length > 0) return
+  await playlistStore.fetchPlaylists()
 }
 
-onMounted(loadMusic)
+onMounted(() => {
+  // 队列为空时落在「播放列表」，否则首次进来只看得到「正在播放」的空状态
+  if (playerStore.queue.length === 0) activeTab.value = 'playlist'
+  void loadMusic()
+})
 
 // ===== 数据 =====
 

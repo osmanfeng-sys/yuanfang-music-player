@@ -63,45 +63,45 @@ export async function fetchAllTracks(): Promise<Track[]> {
     .filter((t): t is Track => t !== null)
 }
 
-/**
- * 获取艺人列表（从所有曲目中提取、去重）
- * Worker 目前没有 /api/artists 端点，先本机构建
- */
-export async function fetchArtists(): Promise<Artist[]> {
-  const tracks = await fetchAllTracks()
-
+/** 从一份曲目列表里提取艺人（去重，按曲目数降序） */
+function buildArtists(tracks: Track[]): Artist[] {
   const artistMap = new Map<string, Track[]>()
   for (const track of tracks) {
     const list = artistMap.get(track.artist) || []
     list.push(track)
     artistMap.set(track.artist, list)
   }
+  return Array.from(artistMap.entries())
+    .map(([name, artistTracks]) => ({
+      id: name.toLowerCase().replace(/\s+/g, '-'),
+      name,
+      trackCount: artistTracks.length,
+      albums: []
+    }))
+    .sort((a, b) => b.trackCount - a.trackCount)
+}
 
-  return Array.from(artistMap.entries()).map(([name, artistTracks]) => ({
-    id: name.toLowerCase().replace(/\s+/g, '-'),
-    name,
-    trackCount: artistTracks.length,
-    albums: [] // 后续 Phase 从路径推断专辑
-  }))
+/**
+ * 获取艺人列表（前端本地构建）
+ */
+export async function fetchArtists(): Promise<Artist[]> {
+  return buildArtists(await fetchAllTracks())
 }
 
 /**
  * 获取艺人详情
+ *
+ * 只抓一次 /list：原来 fetchArtists() + fetchAllTracks() 各抓一遍，
+ * 打开一个艺人页要下两遍 60KB 的曲库。
  */
 export async function fetchArtistDetail(id: string): Promise<ArtistDetailResponse | null> {
-  const artists = await fetchArtists()
-  const artist = artists.find((a) => a.id === id)
+  const tracks = await fetchAllTracks()
+  const artist = buildArtists(tracks).find((a) => a.id === id)
   if (!artist) return null
 
-  const tracks = await fetchAllTracks()
-  const artistTracks = tracks.filter((t) => t.artist === artist.name)
-
   return {
-    artist: {
-      ...artist,
-      albums: [] // 后续 Phase 实现专辑推断
-    },
-    tracks: artistTracks
+    artist: { ...artist, albums: [] },
+    tracks: tracks.filter((t) => t.artist === artist.name)
   }
 }
 
