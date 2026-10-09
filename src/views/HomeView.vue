@@ -272,7 +272,9 @@ watch(
         </div>
 
         <!-- 正在播放 -->
-        <template v-else-if="activeTab === 'playing'">
+        <!-- 注意：这里必须是 v-if，不能接上面列头的 v-if 成 v-else-if 链——
+             否则表头一显示（有队列时必然显示），整个列表就被跳过，表现为「只有表头，没有歌」 -->
+        <template v-if="activeTab === 'playing'">
           <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放列表」挑一首吧</p>
           <div
             v-for="(track, idx) in queue"
