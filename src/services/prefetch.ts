@@ -18,6 +18,18 @@ function parseSegments(m3u8: string): string[] {
 }
 
 /**
+ * 从 m3u8 文本算总时长（秒）：累加所有 `#EXTINF`。
+ *
+ * Worker 的 /list 不下发 duration，R2 里也没有时长元数据，
+ * 唯一的来源就是每首曲子的 m3u8（一个约 748 B 的小文件）。
+ */
+export function parseM3u8Duration(m3u8: string): number {
+  let total = 0
+  for (const m of m3u8.matchAll(/#EXTINF:\s*([\d.]+)/g)) total += Number(m[1])
+  return total
+}
+
+/**
  * 预取某个曲目的全部分片。
  * 不阻塞调用方，失败静默忽略（播放本身仍会按需加载）。
  */

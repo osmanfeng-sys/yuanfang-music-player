@@ -138,11 +138,19 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  /** 设置播放倍速 */
+  /**
+   * 设置播放倍速。
+   *
+   * ⚠️ APlayer v1 **没有** playbackRate API（在 APlayer.min.js 里搜 `playbackRate` 命中 0 次），
+   * 原来写的 `aplayerInstance.playbackRate?.(rate)` 是可选链静默吞掉的空操作 ——
+   * 这就是倍速下拉框一直不生效的原因。直接改底层 <audio> 元素。
+   */
   function setPlaybackRate(rate: number) {
     playbackRate.value = rate
-    if (aplayerInstance.value) {
-      aplayerInstance.value.playbackRate?.(rate)
+    const audio = aplayerInstance.value?.audio as HTMLAudioElement | undefined
+    if (audio) {
+      audio.playbackRate = rate
+      audio.preservesPitch = true // 变速不变调
     }
   }
 

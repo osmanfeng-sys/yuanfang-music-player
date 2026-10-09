@@ -76,6 +76,8 @@ function seedQueue() {
 onMounted(async () => {
   await loadMusic()
   seedQueue()
+  // 曲目时长后台补（/list 不下发 duration），延迟启动，别跟首屏起播抢带宽
+  setTimeout(() => void playlistStore.fillDurations(playlistStore.allTracks), 6000)
   // 起播没成功（曲库为空或加载失败）就落在「播放列表」，别让首屏是一片空白
   if (!playerStore.currentTrack) activeTab.value = 'playlist'
 })
@@ -120,8 +122,9 @@ function playFrom(list: Track[], track: Track) {
   userStore.addToHistory(track.id)
   playerStore.setQueue([...list], idx)
   playerStore.isPlaying = true
-  // 后台并行预取分片（不阻塞播放），缓解链路慢导致的卡顿
-  void prefetchHlsSegments(track.url)
+  // 预取延后 5 秒再开始：国内链路带宽有限，点击后立刻预取会和 hls.js 抢首片，
+  // 反而把「点下去到出声」拖得更久。等首片播出来再补后面的分片。
+  setTimeout(() => void prefetchHlsSegments(track.url), 5000)
 }
 
 function onRateChange(e: Event) {

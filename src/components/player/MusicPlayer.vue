@@ -99,6 +99,8 @@ onMounted(() => {
     } else if (ap) {
       playerStore.currentIndex = ap.list.index
     }
+    // APlayer 没有倍速 API，切歌后得把当前倍速重新贴到 audio 上
+    if (ap?.audio) ap.audio.playbackRate = playerStore.playbackRate
     nextTick(() => {
       // 自动播放（处理 next/prev 场景：切换后继续播放）
       setTimeout(() => {
@@ -140,12 +142,32 @@ onMounted(() => {
 /**
  * 监听播放队列：重建 APlayer 列表
  */
+/** 上一次构建 APlayer 列表时的队列指纹，用来判断「同一队列内切歌」 */
+let lastQueueKey = ''
+
 watch(
   () => playerStore.queue,
   (tracks) => {
     if (!ap) return
     const shouldPlay = playerStore.isPlaying
     const targetIdx = playerStore.currentIndex
+
+    // 同一队列内切歌（首页点列表就是这条路径）：只切索引，不重建列表。
+    // 原来无脑 clear + add 会把 191 个列表项重建一遍，hls 实例也被连带销毁重来，
+    // 白白拖长「点下去到出声」的时间。
+    const key = tracks.map((t) => t.id).join('|')
+    if (key === lastQueueKey && tracks.length > 0) {
+      if (targetIdx >= 0 && targetIdx < tracks.length) {
+        _ignorePause = true
+        ap.list.switch(targetIdx)
+        _ignorePause = false
+        // 真正出声由 listswitch 里的重试逻辑兜底，这里失败无所谓
+        if (shouldPlay) ap.play().catch(() => {})
+      }
+      return
+    }
+    lastQueueKey = key
+
     _ignorePause = true
     ap.list.clear()
     _ignorePause = false

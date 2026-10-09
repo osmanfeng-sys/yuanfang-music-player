@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { WORKER_BASE_URL } from '@/utils/constants'
 import { normalizeTrack } from '@/services/music'
+import { parseM3u8Duration } from '@/services/prefetch'
 import type { Track, Artist, Playlist } from '@/types'
 
 export const usePlaylistStore = defineStore('playlist', () => {
@@ -116,9 +117,18 @@ export const usePlaylistStore = defineStore('playlist', () => {
       // /list 给的是 {name, url, type, album} 原始对象，没有 title/artist/folder，
       // 必须过 normalizeTrack —— 直接当 Track 用的话歌名歌手全是 undefined，
       // 表现为「歌能放，但列表和底栏一片空白」
+      // R2 里存在重复上传（例："Aqua - Aquarius [mqms2]" 与 "Aqua - Aquarius"），
+      // 解析后歌手与歌名完全一致，列表会出现两行一模一样的曲目 —— 按 歌手|歌名 去重
+      const seen = new Set<string>()
       const tracks = raw
         .map((item) => normalizeTrack(item))
         .filter((t): t is Track => t !== null)
+        .filter((t) => {
+          const key = `${t.artist}|${t.title}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
 
       // 填入 trackCache
       const cache: Record<string, Track> = {}
@@ -144,6 +154,37 @@ export const usePlaylistStore = defineStore('playlist', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /**
+   * 后台补齐曲目时长。
+   *
+   * /list 不下发 duration，R2 里也没有时长元数据，唯一来源是每首曲子的 m3u8
+   * （约 748 B 的小文件），把 `#EXTINF` 累加即得。
+   * 并发压到 2，并由调用方延迟启动 —— 别和正在播放的分片抢带宽。
+   */
+  async function fillDurations(tracks: Track[], concurrency = 2): Promise<void> {
+    const pending = tracks.filter((t) => t.duration == null)
+    const worker = async () => {
+      for (;;) {
+        const t = pending.shift()
+        if (!t) return
+        try {
+          const res = await fetch(t.url)
+          if (!res.ok) continue
+          const seconds = parseM3u8Duration(await res.text())
+          if (seconds > 0 && trackCache.value[t.id]) {
+            trackCache.value[t.id] = {
+              ...trackCache.value[t.id],
+              duration: Math.round(seconds)
+            }
+          }
+        } catch {
+          // 单首失败不影响其余
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: concurrency }, () => worker()))
   }
 
   /** 获取单个曲目详情 */
@@ -216,6 +257,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     searchTracks,
     // Actions
     fetchPlaylists,
+    fillDurations,
     fetchTrack,
     createPlaylist,
     updatePlaylist,
