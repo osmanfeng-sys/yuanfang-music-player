@@ -71,7 +71,19 @@ if (folderFlag !== -1 && !folder) {
 // 没有任何参数（双击 upload-music.bat 的场景）→ 交互式收集。
 // 交互放在这里而不是 bat 里：cmd 解析含中文的括号块会错位，Node 没有这个毛病。
 if (argv.length === 0) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  // terminal: false = 不让 readline 接管控制台（不设 raw mode、不自己重绘行）。
+  //
+  // 两个理由，都是实测出来的：
+  //  1. readline 一旦接管，Windows 控制台的**行输入模式**就被关掉，而「把文件拖进窗口」
+  //     是 conhost/终端靠行输入缓冲区实现的（conhost 把带引号的路径插进去，程序无法干预），
+  //     模式一关闭拖放就整个失效。
+  //  2. 它自己重绘输入行，会把我们先前写出去的提示吞掉（上一版「路径 >」看不见就是这个）。
+  // 交给控制台自己处理行输入与回显，拖放和提示就都正常了。
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false
+  })
   const clean = (s) => s.trim().replace(/^"(.*)"$/, '$1') // 拖进来的路径带引号
 
   // 非 TTY（管道 / 重定向）下 stdin 读完即 EOF，之后再 question 会永远挂着
@@ -113,7 +125,14 @@ if (argv.length === 0) {
   srcDir = clean(await ask('  路径 > '))
   if (!srcDir) bail('没有输入路径。')
   const st = await stat(srcDir).catch(() => null)
-  if (!st) bail(`路径不存在：${srcDir}`)
+  if (!st) {
+    bail(
+      `路径不存在：${srcDir}\n` +
+        '     如果这是拖放进来的，说明当前终端不吃拖放（Windows Terminal 对拖放的支持不稳定）。\n' +
+        '     改用这两招：① 把文件直接拖到 upload-music.bat 图标上；\n' +
+        '              ② 在资源管理器里 Shift+右键 →「复制文件地址」，再粘到这里。'
+    )
+  }
   const preview = st.isFile() ? [srcDir] : await findMp3(srcDir)
   if (preview.length === 0) bail(`这个路径下没有 .mp3 文件：${srcDir}`)
   console.log(`  ✓ 路径有效，找到 ${preview.length} 首 mp3`)
