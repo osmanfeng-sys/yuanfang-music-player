@@ -22,6 +22,17 @@ export function parseTrackName(rawName: string): ParsedTrackName {
     return { artist, title }
   }
 
+  // 变体："歌手 -歌名"（连字符前有空格、后面没有）。
+  // 不少从各处下载来的文件长这样（如「于浩东 -我正年少」），上面的规则只认
+  // 连字符【后】有空格的形式，会把它整段当成歌名、艺人显示 Unknown。
+  const tightDash = /^(.+?)\s+-\s*(.+)$/
+  const tight = rawName.match(tightDash)
+  if (tight) {
+    const artist = tight[1].trim()
+    const title = tight[2].replace(/\s*\[.*?\]\s*$/, '').trim()
+    if (artist && title) return { artist, title }
+  }
+
   // Fallback: 没有分隔符 → 整段当标题
   return { artist: 'Unknown', title: rawName.trim() }
 }
