@@ -16,6 +16,9 @@ package-lock.json.old
 .env
 .env.local
 
+# 项目记忆（含运维细节，仓库是公开的，不上传）
+memory.md
+
 # Cloudflare 环境
 .wrangler/
 

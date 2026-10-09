@@ -1,99 +1,94 @@
 # 🎵 远方音乐播放器 (yuanfang-music-player)
 
-> 基于 Cloudflare Pages + Worker + R2 的在线 HLS 音乐播放器 — Vue 3 + TypeScript 重构版
+> 全栈无服务端在线 HLS 音乐播放器 — Vue 3 + TypeScript + Cloudflare（Pages / Worker / R2）
 
-远方音乐播放器是一个**全栈无服务端架构**的在线音乐平台。音乐文件（HLS 格式，含 `.m3u8` + `.ts` 分片）存储在 Cloudflare R2 对象存储中，通过 Cloudflare Worker 进行反向代理和 API 服务，前端为 Vue 3 + TypeScript 单页应用，部署在 Cloudflare Pages 上。整套系统无需维护传统服务器，近乎零成本运行。
+个人自用的在线音乐站。音乐以 HLS 分片存于 Cloudflare R2，Worker 做代理与 API，前端是 Vue 3 单页应用跑在 Cloudflare Pages 上。没有传统服务器，无运维成本。
+
+**最后更新：2026-10-09**
 
 ---
 
-## ✨ 功能特性
+## 🌐 线上地址与资源清单
 
-| 特性 | 说明 |
+| 用途 | 地址 / 名称 |
 |------|------|
-| 🎧 **HLS 流式播放** | 基于 hls.js 的 HTTP Live Streaming 播放，支持高码率音频分片加载 |
-| 📂 **按艺人浏览** | 自动解析曲目名称，按「艺人 — 歌曲」格式归类展示 |
-| 🔍 **本地搜索** | 基于前端缓存的即时搜索，支持歌曲名/艺人名模糊匹配 |
-| 📋 **自定义播放列表** | 创建、编辑、删除个人播放列表（localStorage 持久化） |
-| 🔀 **多种播放模式** | 顺序播放、随机播放、单曲循环、列表循环 |
-| 📜 **歌词同步显示** | LRC 格式歌词，自动解析时间轴并高亮当前行 |
-| 🌙 **暗色主题** | 深色 UI 设计，护眼且富有沉浸感 |
-| 📱 **响应式布局** | 桌面端侧边栏 + 移动端抽屉式导航，适配多端 |
-| 🚀 **零服务端运维** | 全 Cloudflare 边缘网络部署，无需维护服务器 |
-| 🤖 **CI/CD 自动部署** | GitHub Actions 推送即部署，前端 + Worker 分别发布 |
+| 前端主站（推荐用这个） | https://yuanfangorganics.ccwu.cc |
+| 前端 Pages 默认域名 | https://yuanfang-music.pages.dev |
+| API（Worker 自定义域名） | https://api.yuanfangorganics.ccwu.cc |
+| API 备用地址（大陆需代理） | https://music-proxy.osmanfeng.workers.dev |
+| 播客站点（外链，非本项目） | https://yuanfangselect.ccwu.cc/ |
+| GitHub 仓库（**公开**） | https://github.com/osmanfeng-sys/yuanfang-music-player |
+| Pages 项目名 | `yuanfang-music` |
+| Worker 名 | `music-proxy` |
+| R2 存储桶 | `music-bucket`（Worker 内绑定名 `MUSIC`） |
+| Cloudflare 账号 ID | `d3aaa017897b99e5387bffd8208e3967` |
+
+### 账号与登录入口
+
+| 平台 | 账号 | 登录地址 |
+|------|------|----------|
+| GitHub | `osmanfeng-sys` | https://github.com/login |
+| Cloudflare | 账号 ID 见上表 | https://dash.cloudflare.com/login |
+
+> ⚠️ **本文件在公开仓库里，不放任何密码、邮箱、API Token。**
+> 所有凭证只存在于本机 `.env`（已在 `.gitignore` 中）：
+> `R2_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`。
+> CI 用的两份密钥存在 GitHub Secrets（同名的 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）。
+>
+> ⚠️ 已知暴露项：`.github/workflows/deploy.yml` 里**硬编码了 Cloudflare 账号 ID**，而仓库是公开的。
+> 账号 ID 不是密钥（无法据此登录或改配置），但可被用于社工，介意的话把它挪进 Secrets 并改成 `${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`。
 
 ---
 
 ## 🏗️ 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   用户浏览器 (Browser)                    │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │         Vue 3 SPA (Cloudflare Pages)             │   │
-│  │                                                   │   │
-│  │  Vue Router ──► 页面视图 (7 个路由页面)           │   │
-│  │  Pinia Store ──► 状态管理 (4 个 Store)            │   │
-│  │  APlayer + hls.js ──► HLS 音频播放               │   │
-│  │  localStorage ──► 用户偏好 / 播放列表持久化       │   │
-│  └──────────┬───────────────────────────────────────┘   │
-│             │                                           │
-│             │  fetch() / API                            │
-└─────────────┼───────────────────────────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────────────────────────┐
-│             Cloudflare Worker (Edge Network)             │
-│                                                         │
-│  /list      ──► 返回 playlist.json（全部曲目索引）      │
-│  /*.m3u8    ──► 代理 R2 中的 HLS manifest 文件          │
-│  /*.ts      ──► 代理 R2 中的 TS 音视频分片              │
-│  /api/*     ──► (预留) 艺人/搜索/播放列表 CRUD API      │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│              Cloudflare R2 (对象存储)                    │
-│                                                         │
-│  music-bucket/                                          │
-│  ├── 艺人A/                                             │
-│  │   ├── 歌曲a/playlist.m3u8                            │
-│  │   ├── 歌曲a/segment-001.ts                           │
-│  │   └── 歌曲a/segment-002.ts                           │
-│  ├── 艺人B/                                             │
-│  │   └── ...                                            │
-│  └── playlist.json          ◄── 由 list-r2.js 自动生成  │
-└─────────────────────────────────────────────────────────┘
+用户浏览器
+  │
+  │  Vue 3 SPA  ← 托管在 Cloudflare Pages（yuanfangorganics.ccwu.cc）
+  │   ├── Pinia 状态：player / playlist / user / search
+  │   ├── APlayer + hls.js 播放 HLS 音频
+  │   └── localStorage：歌词缓存、背景模式、播放历史、偏好
+  │
+  ├── fetch /list ─────────────► Cloudflare Worker（music-proxy）
+  ├── 请求 *.m3u8 / *.ts ──────►   ├── /list        → 读 R2 的 playlist.json，补 id/album 后下发
+  └── 歌词直连 lrclib.net ◄────┐   ├── /api/lyrics/* → 读 R2 的 lyrics/<key>.json
+                               │   ├── /api/artists、/api/search、/api/playlists(front-end 用不到)
+                               │   └── /*           → 代理 R2 里的 HLS 分片（兜底路由）
+                               │            │
+                               │            ▼
+                               │   Cloudflare R2（music-bucket）
+                               │     ├── <音乐夹>/<曲目名>/playlist.m3u8 + outputNNN.ts
+                               │     ├── playlist.json      ← 曲目索引，由 list-r2.cjs 生成并回写
+                               │     └── lyrics/<trackId>.json ← 云端歌词缓存
+                               │
+                               └── lrclib.net（免费歌词 API，CORS 全开，前端可直连）
 ```
 
-### 数据流
+### 一次播放的完整链路
 
-1. **初始化**：前端访问 Cloudflare Pages 加载 SPA
-2. **获取曲目**：`GET /list` → Worker 从 R2 读取 `playlist.json` → 返回 `Track[]`
-3. **解析名称**：前端解析 `Artist - Title` 格式 → 构建艺人/歌曲索引
-4. **播放音乐**：用户点击歌曲 → APlayer 加载 `.m3u8` URL → hls.js 接管 `<audio>` → 拉取 `.ts` 分片流式播放
-5. **歌词**：如有歌词文件，自动请求并解析 LRC → 时间轴同步高亮
+1. 打开站点 → 加载 SPA → `GET /list`（约 67 KB，262 首）→ `normalizeTrack()` 解析出 title/artist/folder
+2. 首页自动挑「曲目最多的艺人」填队列并起播第一首（浏览器自动播放策略可能拦下，1.2s 后校正按钮状态）
+3. hls.js 拉 `playlist.m3u8` → 按需拉 `outputNNN.ts`（每片约 10 秒 / 189 KB）
+4. 歌词：localStorage → 云端 `lyrics/<trackId>.json` → lrclib 在线匹配，命中后**同时回写**本地与云端
 
 ---
 
 ## 🛠️ 技术栈
 
-| 层级 | 技术 | 用途 |
+| 层级 | 技术 | 说明 |
 |------|------|------|
-| **前端框架** | Vue 3 (Composition API + `<script setup>`) | UI 组件化 |
-| **语言** | TypeScript 5.3 | 类型安全 |
-| **构建工具** | Vite 5 | 极速 HMR + 构建 |
-| **路由** | Vue Router 4 | 页面导航 (7 个路由) |
-| **状态管理** | Pinia 2 | 播放器/播放列表/用户/搜索状态 |
-| **播放器** | APlayer 1.10 + hls.js 1.5 | HLS 音频流播放 |
-| **工具库** | @vueuse/core | Composition API 工具集 |
-| **CSS** | 原生 CSS + CSS Variables | 暗色主题 + 响应式 |
-| **后端** | Cloudflare Worker (JavaScript) | R2 代理 + API 服务 |
-| **存储** | Cloudflare R2 | 音乐文件 + 索引数据 |
-| **部署** | Cloudflare Pages (前端) + Worker | 边缘网络托管 |
-| **CI/CD** | GitHub Actions | 自动构建 + 部署 |
-| **测试** | Vitest + @vue/test-utils | 单元测试 |
-| **代码规范** | ESLint + Prettier + vue-tsc | 代码质量 |
+| 前端 | Vue 3（Composition API + `<script setup>`）+ TypeScript 5.3 | |
+| 构建 | Vite 5 | 开发端口 3000 |
+| 路由 | Vue Router 4 | 7 条路由（含 404） |
+| 状态 | Pinia 2 | player / playlist / user / search |
+| 播放 | APlayer 1.10 + hls.js 1.5 | APlayer 不原生支持 HLS，由 hls.js 接管 `<audio>` |
+| 样式 | 原生 CSS + CSS 变量 | 玻璃拟态（Glassmorphism）+ 全屏壁纸，页面本身不滚动 |
+| 后端 | Cloudflare Worker（TypeScript → esbuild 单文件） | 独立子项目 `worker/` |
+| 存储 | Cloudflare R2 | 音乐分片 + 索引 + 歌词 |
+| 托管 | Cloudflare Pages（前端）+ Workers（API） | |
+| CI/CD | GitHub Actions | push main 即部署 |
+| 测试 | Vitest | `src/stores/playlist.test.ts` |
 
 ---
 
@@ -101,562 +96,296 @@
 
 ```
 yuanfang-music-player/
+├── index.html / vite.config.ts / tsconfig*.json
+├── package.json                # 前端脚本（含 deploy:local）
+├── wrangler.toml               # Worker 配置：name / main / R2 绑定 / compatibility_date
+├── .env                        # 全部凭证（gitignore，勿提交）
+├── .env.example                # 凭证模板
+├── deploy-code.bat             # Windows：代码部署（前端 + Worker）
+├── deploy-music.bat            # Windows：曲库索引同步
+├── list-r2.cjs                 # 扫描 R2 → 生成 playlist.json → 回写 R2
+├── upload-lyrics.mjs           # 本机批量上传 .lrc 到 R2 的 lyrics/
+├── playlist.json               # 曲目索引（备份用，前端不直接读）
 │
-├── index.html                     # Vite 入口 HTML
-├── vite.config.ts                 # Vite 构建配置（代理、分包策略）
-├── tsconfig.json                  # TypeScript 主配置
-├── tsconfig.node.json             # Node 环境 TypeScript 配置
-├── package.json                   # 前端依赖 & 脚本
-├── .env.example                   # 环境变量模板
-├── .eslintrc.cjs                  # ESLint 配置
-├── .prettierrc                    # Prettier 格式化配置
-├── wrangler.toml                  # Cloudflare Worker 配置（绑定 R2 bucket）
-├── deploy-code.bat                  # Windows 代码部署脚本（常用）
-├── deploy-music.bat                 # Windows 音乐列表同步脚本
+├── src/                        # ★ 前端
+│   ├── main.ts / App.vue / router/index.ts
+│   ├── views/                  #   HomeView（主界面）/ Browse / Artist / Search / Playlist / Settings / NotFound
+│   ├── components/             #   player/（MusicPlayer、LyricsPanel）、layout/、common/、artist/、search/、playlist/
+│   ├── stores/                 #   player.ts / playlist.ts / user.ts / search.ts（+ playlist.test.ts）
+│   ├── services/               #   api.ts / music.ts / lyrics.ts / prefetch.ts / playlist.ts
+│   ├── composables/ utils/ types/
+│   └── assets/styles/          #   variables.css（设计 token）、global.css
 │
-├── src/                           # ★ 前端源代码
-│   ├── main.ts                    #   应用入口：挂载 App + Router + Pinia
-│   ├── App.vue                    #   根组件
-│   ├── env.d.ts                   #   环境类型声明
-│   │
-│   ├── router/
-│   │   └── index.ts               #   Vue Router 配置（7 条路由 + 动态 title）
-│   │
-│   ├── stores/
-│   │   ├── player.ts              #   播放器核心状态（队列、播放模式、音量）
-│   │   ├── playlist.ts            #   播放列表管理（缓存、艺人索引、搜索）
-│   │   ├── user.ts                #   用户偏好（主题、历史、收藏、会话恢复）
-│   │   └── search.ts              #   搜索状态（查询词、结果、搜索历史）
-│   │
-│   ├── components/
-│   │   ├── player/
-│   │   │   ├── MusicPlayer.vue    #   APlayer 封装 + hls.js 接管
-│   │   │   └── LyricsPanel.vue    #   歌词面板（LRC 解析 + 时间轴高亮）
-│   │   ├── playlist/
-│   │   │   ├── PlaylistPanel.vue  #   播放列表面板
-│   │   │   ├── PlaylistItem.vue   #   列表项（当前播放/移除/添加到列表）
-│   │   │   └── MyPlaylists.vue    #   用户自定义播放列表管理
-│   │   ├── search/
-│   │   │   ├── SearchBar.vue      #   搜索栏（300ms 防抖）
-│   │   │   └── SearchResults.vue  #   搜索结果展示
-│   │   ├── artist/
-│   │   │   ├── ArtistList.vue     #   艺人网格列表
-│   │   │   └── ArtistCard.vue     #   艺人卡片（含歌曲数、播放全部）
-│   │   ├── layout/
-│   │   │   ├── AppLayout.vue      #   整体布局容器（header + sidebar + content + footer）
-│   │   │   ├── AppHeader.vue      #   顶部导航栏（Logo、导航、搜索、设置）
-│   │   │   ├── AppSidebar.vue     #   侧边栏（桌面端，含播放队列快捷入口）
-│   │   │   └── AppFooter.vue      #   底部固定播放条
-│   │   └── common/
-│   │       ├── LoadingSpinner.vue #   加载动画（sm/md/lg + 文字）
-│   │       ├── ErrorMessage.vue   #   错误提示（支持重试按钮）
-│   │       └── EmptyState.vue     #   空状态占位（图标 + 标题 + 操作按钮）
-│   │
-│   ├── views/
-│   │   ├── HomeView.vue           #   首页：最近播放 + 推荐 + 快速入口
-│   │   ├── BrowseView.vue         #   浏览：全部艺人列表
-│   │   ├── ArtistView.vue         #   艺人详情：专辑 + 全部歌曲
-│   │   ├── SearchView.vue         #   搜索结果页
-│   │   ├── PlaylistView.vue       #   播放列表详情
-│   │   ├── SettingsView.vue       #   设置页（主题、播放偏好）
-│   │   └── NotFoundView.vue       #   404 页面
-│   │
-│   ├── services/
-│   │   ├── api.ts                 #   API 基础封装（fetch + 超时 + 错误处理）
-│   │   ├── music.ts               #   音乐相关 API（/list、艺人、搜索）
-│   │   └── playlist.ts            #   播放列表 CRUD API
-│   │
-│   ├── types/
-│   │   ├── music.ts               #   Track / Artist / Album 类型定义
-│   │   ├── playlist.ts            #   Playlist / PlayMode 类型定义
-│   │   └── api.ts                 #   API 请求/响应类型定义
-│   │
-│   ├── composables/
-│   │   ├── useAudioPlayer.ts      #   音频播放逻辑封装（APlayer 操作）
-│   │   ├── usePlaylist.ts         #   播放列表操作（播放/创建/加入队列）
-│   │   └── useLocalStorage.ts     #   localStorage 响应式封装（Ref 双向绑定）
-│   │
-│   ├── utils/
-│   │   ├── constants.ts           #   常量定义（Worker URL、key 前缀、分页大小）
-│   │   ├── storage.ts             #   localStorage 通用封装
-│   │   ├── parser.ts              #   Track 名称解析器（"Artist - Title" 格式）
-│   │   └── format.ts              #   格式化工具（时间 mm:ss、文件大小等）
-│   │
-│   └── assets/
-│       └── styles/
-│           ├── variables.css      #   CSS 变量（主题色、间距、圆角、阴影）
-│           └── global.css         #   全局样式重置 + 基础排版
-│
-├── worker/                        # ★ Cloudflare Worker 源码
-│   ├── package.json               #   Worker 独立依赖（esbuild、workers-types）
-│   ├── tsconfig.json              #   Worker TypeScript 配置
+├── worker/                     # ★ Worker 独立子项目（有自己的 package.json）
 │   └── src/
-│       ├── index.ts               #   Worker 入口（路由分发）
-│       └── routes/                #   路由处理函数
-│           ├── list.ts            #   GET /list — 返回曲目索引
-│           ├── proxy.ts           #   GET /* — R2 文件代理
-│           ├── playlists.ts       #   播放列表 CRUD
-│           └── cors.ts            #   OPTIONS 预检请求处理
+│       ├── index.ts            #   路由表分发
+│       ├── routes/             #   list / proxy / lyrics / artists / playlists / cors
+│       └── utils/              #   r2.ts / response.ts（generateTrackId、album 派生）
 │
-├── scripts/
-│   └── list-r2.cjs                 # R2 扫描脚本（遍历 bucket → 生成 + 自动上传 playlist.json）
-│
-├── playlist.json                  # 音乐索引文件（由 list-r2.cjs 自动生成）
-├── .env                           # 环境变量凭证（R2 + Cloudflare 密钥，不提交到 Git）
-├── worker.js                      # Worker 旧版（JS 版本，保留备份）
-│
-└── .github/
-    └── workflows/
-        └── deploy.yml             # GitHub Actions 自动部署流水线
+├── public/                     # bg/0-6.webp（壁纸）、PIC/disc-default.svg（默认唱片）、_routes.json
+└── .github/workflows/deploy.yml
+```
+
+### 已经不再使用的文件（可删）
+
+```
+src/components/layout/AppSidebar.vue    # 侧边栏已从布局移除
+src/components/playlist/PlaylistPanel.vue
+src/components/player/LyricsPanel.vue
+src/components/playlist/MyPlaylists.vue
+worker.js                               # 旧版 JS Worker，已被 worker/src 取代
+public/PIC/IMG_3092.JPG                 # 未提交的废弃素材
 ```
 
 ---
 
-## 🚀 快速开始
+## 💾 数据存储
 
-### 前置条件
-
-- [Node.js](https://nodejs.org/) >= 18
-- [npm](https://www.npmjs.com/) >= 9
-- [Cloudflare 账号](https://dash.cloudflare.com/)（用于 Worker + R2 + Pages）
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)（通过 npm 全局安装，或使用 `npx wrangler`）
-
-### 1. 克隆并安装依赖
-
-```bash
-git clone https://github.com/你的用户名/yuanfang-music-player.git
-cd yuanfang-music-player
-npm install
-```
-
-Worker 有独立的依赖，需要单独安装：
-
-```bash
-cd worker
-npm install
-cd ..
-```
-
-### 2. 配置环境变量
-
-复制 `.env.example` 为 `.env` 并填入你的 R2 凭证：
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env`：
-
-```ini
-# R2 存储桶配置（用于 list-r2.js 扫描生成 playlist.json）
-R2_ENDPOINT=https://<你的account-id>.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=your_access_key_id_here
-R2_SECRET_ACCESS_KEY=your_secret_access_key_here
-
-# Cloudflare 部署配置（用于 wrangler CLI）
-CLOUDFLARE_API_TOKEN=your_api_token_here
-CLOUDFLARE_ACCOUNT_ID=your_account_id_here
-```
-
-> **⚠️ 安全提示**：`.env` 文件已包含在 `.gitignore` 中，切勿提交到 Git。R2 凭证（`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`）用于脚本扫描存储桶，Cloudflare API Token（`CLOUDFLARE_API_TOKEN`）用于 wrangler 部署。
-
-### 3. 配置 R2 Bucket
-
-在 [Cloudflare Dashboard → R2](https://dash.cloudflare.com/?to=r2) 创建一个 bucket（示例：`music-bucket`）。然后将你的音乐文件按以下结构上传：
+### 1. Cloudflare R2（`music-bucket`）— 唯一的服务端存储
 
 ```
 music-bucket/
-├── 艺人名A/
-│   ├── 歌曲名1/
-│   │   ├── playlist.m3u8      # HLS manifest
-│   │   ├── segment-001.ts     # TS 分片
-│   │   └── segment-002.ts
-│   └── 歌曲名2/
-│       └── playlist.m3u8
-└── 艺人名B/
-    └── ...
+├── 01_AQUA(水叮当)/
+│   └── Aqua - Barbie Girl/
+│       ├── playlist.m3u8        # HLS 清单（一首歌一份）
+│       ├── output000.ts         # 分片，约 10 秒 / 189 KB
+│       └── output001.ts ...     # 一首歌约 20 片 ≈ 3.8 MB
+├── 05_郑源/
+│   └── ...
+├── playlist.json                # 曲目索引（Worker /list 读它）
+└── lyrics/<trackId>.json        # 云端歌词缓存（{ syncedLyrics, plainLyrics, ... }）
 ```
 
-> **关于音乐格式**：项目使用 HLS（HTTP Live Streaming）格式。你可以使用 FFmpeg 将音频文件转换为 HLS：
-> ```bash
-> ffmpeg -i input.mp3 -codec: libmp3lame -qscale:a 2 -f hls -hls_time 10 -hls_list_size 0 playlist.m3u8
-> ```
-> 或使用 `.ts` 扩展名直接分片：`ffmpeg -i input.mp3 -c copy -f segment -segment_time 10 -segment_list playlist.m3u8 output%03d.ts`
+- **曲目数**：262 首。R2 里**没有** `.lrc` 文件，也**没有**封面图（实测 404）。
+- **曲目名**取自目录名（`item.Key.split('/').slice(-2,-1)[0]`），因此**目录名必须写成 `歌手 - 歌名`**，否则艺人会解析成 `Unknown`。
+- **音乐夹名** = 一级目录名（如 `01_AQUA(水叮当)`），前端按它分组，所以新夹要带序号前缀保持排序。
+- **trackId** = 对原始曲目名做 FNV-1a 64 位哈希（16 位 hex）。前端 `src/utils/parser.ts` 与 Worker `worker/src/utils/response.ts` **必须保持一致**，否则歌词 key 对不上。
 
-### 4. 生成音乐索引
+### 2. 浏览器 localStorage（前缀 `ym:`）
 
-扫描 R2 bucket 中所有 `playlist.m3u8` 文件并生成索引：
+| key | 内容 |
+|-----|------|
+| `ym:lrc:<trackId>` | 歌词本地缓存（三级缓存的第一级） |
+| 用户偏好 / 背景模式 / 播放历史 / 播放列表 | 见 `src/stores/user.ts`、`useLocalStorage.ts` |
+
+### 3. 仓库内 `playlist.json`
+
+只是索引备份，**前端不读它**（前端读 Worker `/list`）。改它不影响线上。
+
+---
+
+## 🚀 部署链路（重要）
+
+### 正常路径：push 到 main → GitHub Actions 自动部署
+
+`.github/workflows/deploy.yml` 两个 job **串行**执行（避免限流）：
+
+```
+deploy-frontend   npm ci → npm run build → wrangler pages deploy dist/
+      ↓ needs
+deploy-worker     worker npm ci → esbuild → wrangler deploy
+```
+
+### ⚠️ Cloudflare Pages 自带 Git 集成：已停用
+
+Pages 项目 `yuanfang-music` 曾经**同时**挂着 GitHub 集成，于是每次 push 会跑两条链路：
+
+```
+12:24  github:push   Cloudflare 集成自己构建部署   ← build_config 为空 → 不构建，直接上传「仓库根」
+12:25  ad_hoc        GitHub Actions 的 wrangler    ← 正确（dist）
+```
+
+两条都是 Production，**谁最后完成谁生效**。CF 那条发的是仓库根（源码），于是 push 后约 1 分钟线上是白屏源码页，等 CI 覆盖回来 —— 这就是「有时打开是坏的 / 好像没更新」的来源。
+
+**2026-10-09 已修**：把 Pages 的自动部署总开关关掉（`deployments_enabled=false`），生产只由 CI 一条链路发。
+
+- 副作用：PR 预览部署与 PR 评论一并停用（单人项目无影响）
+- 恢复方式：CF Dashboard → Pages → `yuanfang-music` → Settings → Builds and deployments → 打开 Automatic deployments
+- 注意：`wrangler pages deploy`（CI / 手动）**不受**这个开关影响，一直可用
+
+### 手动部署
 
 ```bash
+npm run build && npm run deploy:pages     # 前端
+npm run deploy:worker                     # Worker（含 esbuild 构建）
+npm run deploy:local                      # Windows：跑 deploy-code.bat
+```
+
+---
+
+## 🔄 日常流程
+
+### A. 改代码 → 上线
+
+```bash
+git add -A && git commit -m "..." && git push origin main
+# CI 自动构建部署（约 1~2 分钟）。前端有 CDN 缓存，验证时请 Ctrl+F5 硬刷。
+```
+
+> 也可以直接双击 `deploy-code.bat`（本地构建 + 部署 + push），但它做的事 CI 都会做，平时没必要。
+
+### B. 新增 / 删除音乐
+
+R2 里没有自动化上传脚本，**切片与上传目前是本机手工步骤**：
+
+```bash
+# 1. 本机切片成 HLS（参考命令，按需调整码率）
+ffmpeg -i input.mp3 -c:a aac -b:a 192k -f hls -hls_time 10 -hls_list_size 0 \
+       -hls_segment_filename "output%03d.ts" playlist.m3u8
+
+# 2. 上传到 R2（结构必须是 <音乐夹>/<歌手 - 歌名>/）
+#    分片名保持 outputNNN.ts，与现有 262 首一致
+
+# 3. 重建索引（会同时更新本地 playlist.json 并回写 R2）
 npm run generate:playlist
+
+# 4. 提交索引 + 触发部署
+git add playlist.json && git commit -m "chore: update playlist" && git push
 ```
 
-这会在根目录生成 `playlist.json`，包含所有曲目的名称和 URL。
+等价的一键操作：双击 **`deploy-music.bat`**（扫描 R2 → 生成 + 上传 playlist.json → commit → push）。
 
-> **注意**：执行此脚本需要 `.env` 中的 `R2_ENDPOINT`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY` 正确配置。
+> `generate:playlist` 生成的条目只有 `{name,url,type}`，没有 `album`/`id`；
+> Worker 在 `/list` 时会用 `raw.album || albumFromUrl(url)` 和 `generateTrackId(name)` 补齐，**所以不影响功能**。
 
-### 5. 配置 Cloudflare Worker
+### C. 补中文歌词
 
-编辑 `wrangler.toml`，确保 R2 bucket 名称与你的 bucket 一致：
-
-```toml
-name = "music-proxy"
-main = "worker/dist/worker.js"
-compatibility_date = "2026-07-16"
-
-[[r2_buckets]]
-binding = "MUSIC"
-bucket_name = "music-bucket"   # ← 改为你的 bucket 名称
-```
-
-### 6. 配置 Worker URL
-
-前端通过 Worker URL 获取数据。打开 `src/utils/constants.ts`，确认 `WORKER_BASE_URL` 指向你的 Worker：
-
-```typescript
-// 生产环境：使用自定义域名（中国大陆可正常访问）
-export const WORKER_BASE_URL = 'https://api.你的域名.ccwu.cc'
-// 回退地址：https://music-proxy.你的用户名.workers.dev（需 VPN）
-```
-
-> ⚠️ `*.workers.dev` 域名在中国大陆被网络防火墙屏蔽。如果面向国内用户，请务必给 Worker 绑定自定义域名（如 `api.yourdomain.com`），否则用户需开 VPN 才能听歌。
-
-`vite.config.ts` 中的开发代理也需要同步修改：
-
-```typescript
-proxy: {
-  '/api': {
-    target: 'https://api.你的域名.ccwu.cc',  // ← 改为你的 Worker 自定义域名
-    changeOrigin: true
-  }
-}
-```
-
-### 7. 部署 Worker
+英文曲目由前端自动到 lrclib 匹配；中文曲目命中率低，用本机脚本人工补：
 
 ```bash
-# 构建 Worker（esbuild 打包）
-npm run worker:build
-
-# 部署 Worker 
-npx wrangler deploy worker/dist/worker.js --name music-proxy
+npm run lyrics:list                        # 列出「曲目名 → 歌词 ID」
+npm run lyrics:upload -- ./lyrics          # 上传目录下所有 .lrc
+npm run lyrics:upload -- ./lyrics --dry-run
 ```
 
-### 8. 本地开发
-
-```bash
-npm run dev
-```
-
-浏览器打开 `http://localhost:3000`，即可看到应用。
+- `.lrc` 文件名决定归属：与曲目目录名完全一致，或去掉 `[mqms2]` 之类后缀宽松匹配
+- 编码 UTF-8 / GBK 都收
+- 直写 R2 的 `lyrics/` 前缀，用 `.env` 里的 R2 S3 密钥 —— **没有公网写入接口，拿到密钥才写得进去**
+- 新增歌曲后要先跑 `generate:playlist` 刷新索引，脚本按它匹配
 
 ---
 
-## 💻 开发指南
+## 📡 API 参考
 
-### 可用的 npm Scripts
-
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 启动 Vite 开发服务器（端口 3000，HMR 热更新） |
-| `npm run build` | TypeScript 类型检查 + Vite 生产构建 → `dist/` |
-| `npm run preview` | 本地预览生产构建产物 |
-| `npm run generate:playlist` | 扫描 R2 bucket → 生成 `playlist.json` → **自动上传到 R2** |
-| `npm run worker:build` | 用 esbuild 打包 Worker TypeScript 源码 |
-| `npm run worker:dev` | 本地调试 Worker（wrangler dev） |
-| `npm run deploy:pages` | 部署前端到 Cloudflare Pages |
-| `npm run deploy:worker` | 构建并部署 Worker |
-| `npm run deploy:local` | Windows 一键部署（旧版 deploy.bat） |
-| `npm run lint` | ESLint 检查 + 自动修复 |
-| `npm run format` | Prettier 格式化 |
-| `npm run test` | 运行 Vitest 单元测试 |
-| `npm run test:watch` | 监听模式运行测试 |
-
-### 路由一览
-
-| 路径 | 页面 | 说明 |
+| 方法 | 路径 | 说明 |
 |------|------|------|
-| `/` | 首页 | 最近播放 + 推荐曲目 + 快速入口 |
-| `/browse` | 浏览 | 按艺人网格展示，可跳转艺人详情 |
-| `/artist/:id` | 艺人详情 | 显示专辑 + 全部歌曲 + 一键播放全部 |
-| `/search?q=xxx` | 搜索结果 | 前端本地模糊搜索，支持歌曲名/艺人名 |
-| `/playlist/:id` | 播放列表 | 显示列表曲目 + 播放/编辑/删除 |
-| `/settings` | 设置 | 主题切换（亮色/暗色/跟随系统） |
-| `/*` | 404 | 未匹配路由显示友好提示 |
+| GET | `/list` | 全部曲目索引，返回 `{id,name,url,type,album}[]` |
+| GET | `/api/lyrics/:key` | 读 R2 的 `lyrics/<key>.json` |
+| GET | `/api/artists`、`/api/artists/:id` | 艺人列表 / 详情（前端目前本地分组，未使用） |
+| GET | `/api/search?q=` | 搜索（前端本地搜索，未使用） |
+| GET/POST/PUT/DELETE | `/api/playlists[/:id]` | 播放列表 CRUD（前端未接） |
+| GET/HEAD | `/*` | 代理 R2 任意对象（`.m3u8` → `application/vnd.apple.mpegurl`，`.ts` → `video/MP2T`） |
+| OPTIONS | `*` | CORS 预检 |
 
-### 状态管理结构
+**Worker 在 `/list` 时做的加工**（`worker/src/utils/response.ts`）：补 `id`（FNV-1a 哈希）、补 `album`（取 URL 一级目录，去掉 `01_` 前缀）。
 
-```
-Pinia Stores
-├── playerStore        # 播放器核心（队列、当前曲目、播放状态、音量、模式）
-├── playlistStore      # 曲目缓存、艺人索引、播放列表 CRUD、搜索
-├── userStore          # 主题偏好、播放历史、收藏、会话恢复
-└── searchStore        # 搜索词、结果、搜索历史
-```
-
-Store 之间通过 Pinia 的 `useXxxStore()` 相互调用，例如点击艺人歌曲时：
-
-```
-ArtistView.vue
-  → playlistStore.fetchTracks()      # 获取/过滤该艺人曲目
-  → playerStore.setQueue(tracks)     # 设置播放队列
-  → playerStore.play(0)              # 开始播放第一首
-  → userStore.addToHistory(trackId)  # 记录播放历史
-```
-
-### Track 名称解析规则
-
-`playlist.json` 中的 `name` 字段有 3 种格式，解析器（`src/utils/parser.ts`）按以下优先级处理：
-
-| 格式 | 示例 | 解析结果 |
-|------|------|----------|
-| `Artist - Title` | `Aqua - Barbie Girl` | `{ artist: "Aqua", title: "Barbie Girl" }` |
-| `Artist- Title`（无空格） | `指南针(罗琦)- 不想再是小孩` | `{ artist: "指南针(罗琦)", title: "不想再是小孩" }` |
-| 纯文本（无分隔符） | `与你到永久` | `{ artist: "Unknown", title: "与你到永久" }` |
-
-同时自动清理 `[mqms2]` 等质量标记后缀。
-
-### APlayer + hls.js 集成
-
-这是项目中最关键的技术细节。APlayer v1 原生不支持 HLS（它内部使用 `<audio>` 元素），解决方案：
-
-```
-用户点击歌曲
-  ↓
-APlayer 触发 listswitch 事件
-  ↓ 延迟 100ms 等待 DOM 就绪
-获取 ap.audio (HTMLAudioElement)
-  ↓ 判断 URL 是否为 .m3u8
-  ├─ 是 → 创建 Hls 实例 → hls.loadSource(url) → hls.attachMedia(audio)
-  └─ 否 → 原生 HLS（Safari）→ 直接设置 audio.src = url
-  ↓
-APlayer 开始播放
-```
-
-对应源码：`src/components/player/MusicPlayer.vue`
-
----
-
-## 📦 部署
-
-### 方式一：CI/CD 自动部署（推荐）
-
-推送至 `main` 分支后，GitHub Actions 自动完成（**前后端串行部署**，避免限流）：
-
-1. **前端**：`npm ci` → `npm run build` → Cloudflare Pages 部署
-2. **Worker**（等前端完成）：构建 → `wrangler deploy`
-
-GitHub Secrets 需要配置：
-
-| Secret | 说明 |
-|--------|------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌（需有 **Workers** + **Pages** + **R2** 编辑权限） |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
-
-> ⚠️ `CLOUDFLARE_API_TOKEN` 需要在 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) 中创建，权限至少包含 Workers Edit + Pages Edit。Token 创建后添加到 [GitHub Secrets](https://github.com/osmanfeng-sys/yuanfang-music-player/settings/secrets/actions)。
-
-默认的 workflow 文件在 `.github/workflows/deploy.yml`。
-
-### 方式二：手动部署
-
-```bash
-# 1. 构建前端
-npm run build
-
-# 2. 部署前端到 Pages
-npx wrangler pages deploy . --project-name=yuanfang-music
-
-# 3. 构建并部署 Worker
-npm run worker:build
-npx wrangler deploy worker/dist/worker.js --name music-proxy
-```
-
-### 方式三：Windows 部署脚本（推荐）
-
-项目提供两个拆分脚本，按需使用：
-
----
-
-**`deploy-code.bat` — 代码部署（最常用）**
-
-当你改了前端/Worker 代码后使用。**不做音乐扫描，快。**
-
-| 步骤 | 执行 | 说明 |
-|------|------|------|
-| 1/4 | `npm install` | 安装前端依赖 |
-| 2/4 | `git add . → commit → pull --rebase → push` | 提交代码到 GitHub |
-| 3/4 | `npm run build → wrangler pages deploy` | 构建前端 → 部署到 Cloudflare Pages |
-| 4/4 | 进 `worker/` → `npm install + build → wrangler deploy` | 构建并部署 Worker |
-
-**什么时候用：** 每次你改完代码，双击它就行。
-
-**注意：** 步骤 2（Git push）会触发 GitHub Actions，Actions 也会自动走一遍部署。所以其实你也可以只 commit + push 到 GitHub，等 CI 自动部署，不需要本地跑 `deploy-code.bat`。
-
----
-
-**`deploy-music.bat` — 音乐列表同步**
-
-当你在 R2 存储桶里加了新歌/删了歌后使用。**不构建前端，不部署 Worker，速度快。**
-
-| 步骤 | 执行 | 说明 |
-|------|------|------|
-| 1/2 | `npm run generate:playlist` | 扫描 R2 全部音频文件 → 生成 `playlist.json` → 上传回 R2 |
-| 2/2 | `git add playlist.json → commit → push` | 把新的索引提交到 GitHub |
-
-**什么时候用：** 你往 R2 上传了新歌之后双击它。
-
-Git push 之后 GitHub Actions 会自动重新部署前端和 Worker，所以不需要额外操作。
-
----
-
-## 🌐 API 参考
-
-### Worker 端点
-
-| 方法 | 路径 | 说明 | 响应 |
-|------|------|------|------|
-| `GET` | `/list` | 获取全部曲目索引 | `Track[]` |
-| `GET` | `/*.m3u8` | 代理 HLS manifest 文件 | `application/vnd.apple.mpegurl` |
-| `GET` | `/*.ts` | 代理 TS 音视频分片 | `video/MP2T` |
-| `GET` | `/api/artists` | 获取艺人列表（预留） | `{ artists: Artist[] }` |
-| `GET` | `/api/search?q=xxx` | 搜索曲目（预留） | `{ results: Track[] }` |
-| `OPTIONS` | `*` | CORS 预检请求 | 204 + CORS headers |
-
-> ⚠️ **中国大陆访问须知**：Worker API 通过 `api.yuanfangorganics.ccwu.cc` 访问（自定义域名），使用 Cloudflare 国内网络节点，无需 VPN。若直接访问 `*.workers.dev` 域名则需 VPN。
-
-### 数据模型
-
-```typescript
-interface Track {
-  id: string           // 唯一标识
-  title: string        // 歌曲名（如 "Barbie Girl"）
-  artist: string       // 艺人名（如 "Aqua"）
-  album?: string       // 专辑名（可选）
-  url: string          // Worker 代理 URL（指向 .m3u8 文件）
-  cover?: string       // 封面图 URL
-  lyricsUrl?: string   // 歌词文件 URL
-  duration?: number    // 时长（秒）
-  type: 'hls'          // 媒体类型
-}
-```
-
----
-
-## 🧪 测试
-
-```bash
-# 运行所有测试
-npm run test
-
-# 监听模式
-npm run test:watch
-```
-
-测试覆盖：
-- **Pinia Stores**：播放器状态、播放列表 CRUD、用户偏好
-- **Composables**：useLocalStorage、useAudioPlayer
-- **工具函数**：名称解析器、格式化、常量
-- **API 封装**：请求/响应处理、超时/错误场景
-- **关键组件**：SearchBar（v-model + 防抖）、LyricsPanel（LRC 解析）
+**前端拿到后必须再过 `normalizeTrack()`**（`src/services/music.ts`）：拆分 `歌手 - 歌名`、算 `folder`、算同一个 id。直接拿原始对象渲染会导致「歌能放，但列表和底栏一片空白」。
 
 ---
 
 ## ⚠️ 常见问题
 
-### Q: 播放时没有声音 / 无法加载音乐？
-**A**: 检查以下几点：
-1. 确认 R2 bucket 中有正确的 `playlist.m3u8` 和 `.ts` 分片文件
-2. 确认 Worker 已部署且 `wrangler.toml` 中的 bucket 名称正确
-3. 浏览器控制台是否有 CORS 错误？Worker 已内置 CORS 头
-4. Safari 浏览器使用原生 HLS 支持，无需 hls.js
+**Q：push 了但线上没变化？**
+先 Ctrl+F5 硬刷（Pages 有 CDN 缓存）。若仍不对，去 GitHub Actions 看这次 run 是否成功；再对比线上 `assets/index-*.js` 的文件名与本地 `dist/index.html` 是否一致。历史上最大的坑是 CF 自带 Git 集成用仓库根覆盖了 CI 的产物（已停用，见上文）。
 
-### Q: `playlist.json` 中的艺人名称显示为 "Unknown"？
-**A**: 文件名不符合 `Artist - Title` 格式。检查 R2 中的文件路径是否使用了 `- `（连字符 + 空格）分隔艺人名和歌曲名。
+**Q：列表空白，但能播放、底栏没歌名？**
+`/list` 的原始对象没有 `title`/`artist`，必须经过 `normalizeTrack()`。2026-10-09 还修过一个模板 bug：列表头的 `v-if` 与列表的 `v-else-if` 串成了同一条链，导致有队列时只渲染表头、曲目行全被跳过。
 
-### Q: 本地开发时无法获取数据？
-**A**: 确认 `src/utils/constants.ts` 中的 `WORKER_BASE_URL` 指向你的 Worker 地址，且 Worker 已部署并可访问。开发模式下也可以先 run `wrangler dev worker.js` 在本地启动 Worker。
+**Q：播放慢、卡顿、点开要等 1~2 分钟？**
+根因是**国内到 Cloudflare 的链路本身不稳**（实测直连 36~72 KB/s，且随机 TLS 中断；走代理更慢）。已做的缓解：hls.js 调参（`startFragPrefetch`、`maxBufferLength=20`、失败重试 6 次）、点击播放后后台并行预取分片。**治本方案未实施**：把音频迁到国内可达的对象存储（阿里云 OSS / 腾讯 COS），需重传约 1 GB 并改 Worker 与前端地址。
 
-### Q: 在中国大陆必须开 VPN 才能访问？
-**A**: 这是因为 `workers.dev` 域名在中国大陆被网络防火墙屏蔽。项目的 Worker API 默认使用 `*.workers.dev` 域名，导致无法访问。解决方案：
+**Q：为什么 `workers.dev` 打不开？**
+该域名在大陆被墙。前端统一走自定义域名 `api.yuanfangorganics.ccwu.cc`；`music-proxy.osmanfeng.workers.dev` 只是备用。
 
-1. **给 Worker 绑定自定义域名**（推荐）：在 Cloudflare Dashboard → Workers & Pages → `music-proxy` → Triggers → Custom Domains，添加 `api.yuanfangorganics.ccwu.cc`（或你域名的子域名）
-2. **更新前端代码**：修改 `src/utils/constants.ts` 中的 `WORKER_BASE_URL` 为自定义域名
-3. **重新生成 `playlist.json`**：`npm run generate:playlist` 并上传到 R2
+**Q：艺人显示成 `Unknown`？**
+R2 目录名不符合 `歌手 - 歌名` 格式（例：`Aqua - Barbie Girl`）。解析规则见 `src/utils/parser.ts`，支持 `Artist - Title`、`Artist- Title`、纯文本三种。
 
-绑定自定义域名后，Worker API 走 Cloudflare 的国内网络节点，无需 VPN 即可正常访问。
-
-### Q: 部署后页面白屏 / 404？
-**A**: Cloudflare Pages 是 SPA，需要配置自定义 404 页面指向 `index.html`。在 Pages 项目设置 → 路由中，添加 `/_redirects` 规则：
-```
-/*    /index.html    200
-```
-
-### Q: 如何更新音乐库？
-**A**: 在 R2 bucket 中添加/删除音乐文件后，二选一：
-- **Windows**：双击 `deploy-music.bat`（扫描 R2 → 生成索引 → 上传 → 推 Git，触发 CI 自动部署）
-- **命令行**：
-  ```bash
-  npm run generate:playlist
-  git add playlist.json && git commit -m "update playlist" && git push
-  ```
-  GitHub Actions 会自动构建 + 部署前端和 Worker。
-
-### Q: 艺人卡片没有图片，只有默认图标？
-**A**: 当前版本使用 SVG 绘制的默认艺人头像（绿色渐变背景 + 音符+人形图标）。未来版本会支持艺人自定义封面，存储在 R2 中自动显示。
-
-### Q: 进度条不能拖动？
-**A**: 这是项目初期的 CSS 覆盖问题。如果进度条无法拖动，检查 `src/components/player/MusicPlayer.vue` 中有没有 `cursor: pointer` 相关的样式被覆盖。最新代码已修复此问题。
-
-### Q: `npm run generate:playlist` 报 `require is not defined`？
-**A**: `package.json` 中设置了 `"type": "module"`，导致 `.js` 文件被当作 ES Module 处理。脚本已重命名为 `list-r2.cjs` 解决。如果本地有旧文件，请删除 `list-r2.js`。
+**Q：`npm run generate:playlist` 报 `require is not defined`？**
+`package.json` 是 `"type": "module"`，脚本必须用 `.cjs` 后缀（现为 `list-r2.cjs`）。
 
 ---
 
-## 🔮 未来规划
+## 🌐 本机网络要求（推送 / 部署前必读）
 
-项目基于 [project-plan.md](./project-plan.md) 已完成 Vue 3 + TypeScript 重构，后续计划：
+**部署与推送都依赖能连通 Cloudflare 与 GitHub 的网络**，本机实测：
 
-- [ ] **歌词同步显示**（Phase 19）：从 R2 加载 LRC 歌词文件，解析时间轴，高亮当前行 + 自动滚动
-- [ ] **自定义播放列表云端同步**（Phase 20）：Worker + R2 存储，跨设备同步，localStorage 离线降级
-- [ ] **移动端体验优化**（Phase 21）：响应式布局重构、底部导航栏、迷你播放器、PWA 支持、触控手势
-- [ ] **专辑浏览**：按专辑分类展示曲目
-- [ ] **键盘快捷键**：空格播放/暂停、方向键切歌
-- [ ] **更多音质选择**：支持多码率 HLS 切换
-
----
-
-## 📋 最近更新记录
-
-### 2026-07-21 — 播放器修复 + 自定义域名 + 郑源精选
-
-| 类别 | 改动 | 说明 |
+| 操作 | 需要 | 说明 |
 |------|------|------|
-| 🐛 **播放器修复** | `AbortError` 竞态 | 新增 `_ignorePause` 标志，队列重建时忽略 APlayer 内部 pause 事件 |
-| 🐛 **播放器修复** | 进度条拖动 | 修复 CSS `cursor: pointer`，thumb 增加放大效果 |
-| 🐛 **播放器修复** | 上一曲/下一曲 | `next()`/`prev()` 改用 APlayer 原生 `skipForward()`/`skipBack()` |
-| 🐛 **播放器修复** | `Hls is not defined` | 挂载 `window.Hls = Hls` 供 APlayer 内部引用 |
-| 🐛 **Worker 修复** | `output000.ts 404` | URL 分段编码避免 `%2F` 问题 |
-| 🐛 **Worker 修复** | Worker 不响应 | 更新 `compatibility_date` 为 `2026-07-21` |
-| 🐛 **脚本修复** | `require is not defined` | `list-r2.js` → `list-r2.cjs` |
-| 🌏 **中国大陆访问** | 自定义域名 | API 改用 `api.yuanfangorganics.ccwu.cc`，绕过 workers.dev 封锁 |
-| 🔄 **一键更新** | 自动上传 R2 | `npm run generate:playlist` 扫描 → 生成 → 自动上传 R2 |
-| 🤖 **CI/CD** | 前后端串行部署 | 改为 `needs: deploy-frontend` 按序执行，避免限流 |
-| 🎤 **郑源精选** | 首页默认歌单 | 首页新增郑源精选板块（15 首歌）+ "播放全部"按钮 |
-| 🎨 **艺人头像** | 默认 SVG 图标 | 绿色渐变 + 音符 + 人形，替换灰色剪影 |
-| 📋 **项目计划** | 新增 3 个 Phase | 歌词支持、云端播放列表、移动端优化 |
+| `git push` 到 GitHub | 直连（WARP 通常够） | GitHub 在国内常被干扰，开 WARP 后一般可行 |
+| `wrangler` 任何命令（部署、查部署历史、调 CF API） | **WARP 开着** | CF API 直连经常 `fetch failed` |
+| 浏览器访问线上站点 | 无特殊要求 | 前端与 API 都走了自定义域名，国内可直连 |
+
+**两个反复踩到的坑：**
+
+1. **Clash Verge 会设 Windows 系统代理并把本地请求劫持掉**（表现为 `unexpected EOF` / `SSL connection could not be established`，极易误判成服务端挂了）。
+   测网络前先确认：
+   ```powershell
+   Get-Process | Where-Object { $_.ProcessName -match "clash|verge|mihomo" }
+   Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" | Select ProxyEnable
+   ```
+   要么彻底退出 clash 进程，要么在命令前置 `$env:HTTP_PROXY=''; $env:HTTPS_PROXY=''; $env:ALL_PROXY=''; $env:NO_PROXY='*'`。
+
+2. **Clash 退出后 git 仍可能走残留的 `127.0.0.1` 代理**，push 直接失败：
+   ```
+   fatal: unable to access '...': Failed to connect to github.com port 443 via 127.0.0.1
+   ```
+   解法（一次性、不改全局配置）：
+   ```bash
+   git -c http.proxy= -c https.proxy= push origin main
+   ```
+
+WARP 开关脚本：`G:\Program Files\.claude\tools\warp-on.ps1`（由本机工具链维护，不在本仓库内）。
 
 ---
 
-## 📄 许可证
+## 🧰 npm 脚本
 
-本项目仅供个人学习研究使用。音乐文件的版权归各自版权持有人所有。
+| 命令 | 说明 |
+|------|------|
+| `npm run dev` | Vite 开发服务器（3000） |
+| `npm run build` | `vue-tsc --noEmit` + Vite 构建 → `dist/` |
+| `npm run preview` | 本地预览构建产物 |
+| `npm run test` | Vitest 单元测试 |
+| `npm run generate:playlist` | 扫描 R2 → 生成并回写 `playlist.json` |
+| `npm run lyrics:list` / `lyrics:upload` | 歌词上传工具（本机） |
+| `npm run worker:build` / `worker:dev` | Worker 构建 / 本地调试 |
+| `npm run deploy:pages` | 部署前端到 Pages（`wrangler pages deploy dist`） |
+| `npm run deploy:worker` | 构建并部署 Worker |
+| `npm run deploy:local` | 跑 `deploy-code.bat`（Windows 一键） |
+| `npm run lint` / `format` | ESLint / Prettier |
 
 ---
 
-## 🤝 贡献
+## 📋 待办与遗留
 
-欢迎 Issue 和 PR！如果发现 bug 或有功能建议，请先查看 [project-plan.md](./project-plan.md) 了解项目规划方向。
+- [ ] **卡顿治本**：音频迁到国内对象存储（唯一有效路径，见常见问题）
+- [ ] 中文歌歌词命中率观察，必要时补充
+- [ ] 清理未使用文件：`AppSidebar.vue`、`PlaylistPanel.vue`、`LyricsPanel.vue`、`MyPlaylists.vue`、`worker.js`、`public/PIC/IMG_3092.JPG`
+- [ ] Worker 端 `/api/artists`、`/api/search`、`/api/playlists` 前端未接，可删或接上
+- [ ] 把 workflow 里硬编码的 Cloudflare 账号 ID 挪进 Secrets
 
 ---
 
-*Made with ❤️ and Vue 3 + Cloudflare*
+## 📝 更新记录
+
+### 2026-10-09
+
+| 类别 | 改动 |
+|------|------|
+| 🐛 修复 | **列表空**：`HomeView.vue` 列表头 `v-if` 与列表 `v-else-if` 串成一条链，有队列时曲目行被整体跳过（只剩表头） |
+| 🐛 修复 | 曲库未解析导致列表与底栏歌名全空（回归）——`/list` 原始对象必须过 `normalizeTrack()` |
+| 🐛 修复 | 首页曲库静默空白 + 重复抓取曲库导致加载慢 |
+| 🐛 修复 | `npm run deploy:pages` 曾指向项目根目录而非 `dist` |
+| ✨ 新增 | 歌词云端优先（localStorage → R2 → lrclib，命中即双写） |
+| ✨ 新增 | 首页默认填队列并起播第一首；极简通栏布局、三列歌单、播放模式、哈希 ID、歌词后台上传 |
+| 🔧 运维 | **停用 Cloudflare Pages 自带的 Git 集成自动部署**，消除「push 后短暂被仓库根覆盖」的坏版本窗口 |
+
+### 2026-10-04
+
+悬浮玻璃风格改版（对齐 music.mmp.cc）：全屏壁纸 + 玻璃面板 + 页面不滚动；在线歌词（lrclib）+ 音乐夹二级列表；CD 唱片改用 `disc-default.svg`。
+
+---
+
+## 📄 许可
+
+仅供个人学习研究使用。音乐文件版权归各自版权持有人所有。
