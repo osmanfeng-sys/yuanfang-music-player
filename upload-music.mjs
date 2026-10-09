@@ -20,11 +20,12 @@
  *
  * 传完记得跑 `npm run generate:playlist` 刷新索引，再 push 触发部署。
  */
-import { readdir, readFile, mkdtemp, rm } from 'node:fs/promises'
-import { basename, extname, join, relative, sep } from 'node:path'
+import { readdir, readFile, mkdtemp, rm, stat } from 'node:fs/promises'
+import { basename, dirname, extname, join, relative, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { createInterface } from 'node:readline/promises'
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
 const run = promisify(execFile)
@@ -59,16 +60,78 @@ const s3 = new S3Client({
 const argv = process.argv.slice(2)
 const dryRun = argv.includes('--dry-run')
 const folderFlag = argv.indexOf('--folder')
-const folder = folderFlag !== -1 ? argv[folderFlag + 1] : null
-const srcDir = argv.find((a, i) => !a.startsWith('-') && i !== folderFlag + 1)
+let folder = folderFlag !== -1 ? argv[folderFlag + 1] : null
+let srcDir = argv.find((a, i) => !a.startsWith('-') && i !== folderFlag + 1)
 
-if (!srcDir) {
-  console.error('用法：npm run music:upload -- <本地目录> [--folder "音乐夹名"] [--dry-run]')
-  console.error('  不给 --folder 时，本地目录名即音乐夹名（目录结构原样映射到 R2）')
-  process.exit(1)
-}
 if (folderFlag !== -1 && !folder) {
   console.error('[Error] --folder 后面要跟音乐夹名，例如 --folder "06_网络歌曲"')
+  process.exit(1)
+}
+
+// 没有任何参数（双击 upload-music.bat 的场景）→ 交互式收集。
+// 交互放在这里而不是 bat 里：cmd 解析含中文的括号块会错位，Node 没有这个毛病。
+if (argv.length === 0) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const clean = (s) => s.trim().replace(/^"(.*)"$/, '$1') // 拖进来的路径带引号
+
+  // 非 TTY（管道 / 重定向）下 stdin 读完即 EOF，之后再 question 会永远挂着
+  // （Node 直接报 "unsettled top-level await"）。所以那种情况先一次性读完，再逐行
+  // 按序「回答」；TTY（双击 bat 的真实场景）走正常的实时提问。
+  let scripted = null
+  if (!process.stdin.isTTY) {
+    scripted = []
+    for await (const line of rl) scripted.push(line)
+  }
+  const ask = async (q) => {
+    process.stdout.write(q)
+    if (scripted) {
+      const v = scripted.shift() ?? ''
+      process.stdout.write(v + '\n')
+      return v
+    }
+    return rl.question('')
+  }
+
+  srcDir = clean(
+    await ask('源路径（音乐文件夹或单个 mp3，可把文件直接拖进本窗口）:\n> ')
+  )
+  const st = srcDir ? await stat(srcDir).catch(() => null) : null
+  if (!st) {
+    rl.close()
+    console.error(`\n[Error] 路径不存在：${srcDir || '(空)'}`)
+    process.exit(1)
+  }
+
+  console.log(
+    st.isFile()
+      ? '\n单个文件必须指定音乐夹 —— 否则会落在 R2 根目录，列表里归入「未分类」。'
+      : '\n音乐夹名留空 = 用本地目录名映射（D:\\传\\05_郑源\\x.mp3 → R2 的 05_郑源/x.mp3）'
+  )
+  const answer = clean(await ask('音乐夹名（如 06_网络歌曲）:\n> '))
+  if (answer) folder = answer
+  if (st.isFile() && !folder) {
+    rl.close()
+    console.error('\n[取消] 单个文件没有指定音乐夹。')
+    process.exit(1)
+  }
+
+  const ok = clean(
+    await ask(
+      `\n源  ：${srcDir}\n目标：${folder ? `音乐夹「${folder}」` : '按本地目录名映射到 R2'}\n确认上传？(Y/N) > `
+    )
+  )
+  rl.close()
+  if (!/^y(es)?$/i.test(ok)) {
+    console.log('[取消]')
+    process.exit(0)
+  }
+  console.log()
+}
+
+if (!srcDir) {
+  console.error('用法：npm run music:upload -- <本地目录或单个 mp3> [--folder "音乐夹名"] [--dry-run]')
+  console.error('  不给 --folder 时，本地目录名即音乐夹名（目录结构原样映射到 R2）')
+  console.error('  不带任何参数直接跑（或双击 upload-music.bat）则进入交互模式')
   process.exit(1)
 }
 
@@ -119,13 +182,32 @@ async function loadDurations() {
 
 // ===== 主流程 =====
 
-const files = await findMp3(srcDir)
+// 源可以是目录，也可以是单个 .mp3 文件
+const srcStat = await stat(srcDir).catch(() => null)
+if (!srcStat) {
+  console.error(`[Error] 路径不存在：${srcDir}`)
+  process.exit(1)
+}
+const isSingleFile = srcStat.isFile()
+// 单文件时以它所在目录为基准，这样 key 就是文件名本身
+const baseDir = isSingleFile ? dirname(srcDir) : srcDir
+const files = isSingleFile
+  ? extname(srcDir).toLowerCase() === '.mp3'
+    ? [srcDir]
+    : []
+  : await findMp3(srcDir)
+
 if (files.length === 0) {
   console.error(`[Error] ${srcDir} 下没有 .mp3 文件`)
   process.exit(1)
 }
+if (isSingleFile && !folder) {
+  console.warn('[提示] 单个文件没给 --folder，它会落在 R2 根下，列表里归入「未分类」')
+}
 
-console.log(`${dryRun ? '[dry-run] ' : ''}源目录：${srcDir}    找到 ${files.length} 首`)
+console.log(
+  `${dryRun ? '[dry-run] ' : ''}源${isSingleFile ? '文件' : '目录'}：${srcDir}    找到 ${files.length} 首`
+)
 console.log(`目标位置：${folder ? `音乐夹「${folder}」下` : '按本地目录结构原样映射'}\n`)
 
 const tmp = await mkdtemp(join(tmpdir(), 'ym-upload-'))
@@ -139,7 +221,7 @@ async function handle(file, idx) {
   const stem = basename(file, extname(file))
   const key = folder
     ? `${folder}/${stem}.mp3`
-    : relative(srcDir, file).split(sep).join('/')
+    : relative(baseDir, file).split(sep).join('/')
 
   // 文件名不符合「歌手 - 歌名」时，前端会把它整个当歌名、艺人显示 Unknown
   if (!/\s-\s/.test(stem)) {

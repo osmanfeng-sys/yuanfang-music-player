@@ -226,18 +226,32 @@ git add -A && git commit -m "..." && git push origin main
 
 ### B. 新增音乐（mp3 直传，不需要切片）
 
+**最省事：双击 `upload-music.bat`**。不带参数时它进入交互模式：
+
+1. 把**音乐文件夹**或**单个 mp3** 直接拖进窗口（或粘贴路径），回车
+2. 输入音乐夹名 —— 留空则用本地目录名映射（`D:\传\05_郑源\x.mp3` → R2 的 `05_郑源/x.mp3`）
+3. 确认后开始上传
+
+也可以直接把文件拖到 bat 图标上，或带参数运行（此时不交互，适合批处理）：
+
 ```bash
-# 1. 一条命令上传（会递归整个目录）
+upload-music.bat "D:\待上传" --folder "06_网络歌曲" --dry-run
+
+# 命令行等价写法（npm 脚本）
 npm run music:upload -- "D:\待上传" --folder "06_网络歌曲"   # 整个目录传进同一个音乐夹
 npm run music:upload -- "D:\待上传"                        # 本地目录名即音乐夹，层级原样映射
 npm run music:upload -- "D:\待上传" --dry-run               # 先预览不上传
+```
 
-# 2. 重建索引（扫 R2 生成 playlist.json 并回写）
+上传完再重建索引并发布：
+
+```bash
 npm run generate:playlist
-
-# 3. 发布
 git add playlist.json && git commit -m "chore: update playlist" && git push
 ```
+
+> **两个 bat 的分工**：`upload-music.bat` 只把本地文件传进 R2；`deploy-music.bat` 只扫 R2 重建索引并推送。
+> **必须先上传、后扫描** —— 顺序反了，索引里不会有新歌。
 
 上传脚本做的事：**ffprobe 读时长/码率 → `ffmpeg -c:a copy -vn` 剥掉内嵌封面 → 传 R2 → 时长写进 R2 的 `durations.json`**。
 剥封面是无损的（音频流直接 copy），但会去掉内嵌的配图 —— 封面动辄几百 KB 且在文件头部，浏览器得先越过它才能出声。
