@@ -83,13 +83,16 @@ if (argv.length === 0) {
     for await (const line of rl) scripted.push(line)
   }
   const ask = async (q) => {
-    process.stdout.write(q)
+    // 非 TTY：readline 已 EOF，自己写提示、按行喂输入
     if (scripted) {
+      process.stdout.write(q)
       const v = scripted.shift() ?? ''
       process.stdout.write(v + '\n')
       return v
     }
-    return rl.question('')
+    // TTY：提示必须交给 readline 输出。先 stdout.write 再 question('') 会被 readline
+    // 重绘吞掉，用户在窗口里根本看不到「路径 >」这类提示（实测如此）
+    return rl.question(q)
   }
   /** 出错就停：给一行明确的原因，别让窗口静静卡住 */
   const bail = (why) => {
@@ -138,7 +141,7 @@ if (argv.length === 0) {
   console.log('【3/3】确认')
   console.log(`  源  ：${srcDir}`)
   console.log(`  数量：${preview.length} 首`)
-  const ok = clean(await ask('  开始上传？(Y/N) > '))
+  const ok = clean(await ask('  输入 Y 回车 = 开始上传，直接回车或其它键 = 取消 > '))
   rl.close()
   if (!/^y(es)?$/i.test(ok)) {
     console.log('\n  [取消] 没有上传任何文件。')
