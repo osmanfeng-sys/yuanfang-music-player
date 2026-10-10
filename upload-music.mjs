@@ -61,7 +61,11 @@ const argv = process.argv.slice(2)
 const dryRun = argv.includes('--dry-run')
 const folderFlag = argv.indexOf('--folder')
 let folder = folderFlag !== -1 ? argv[folderFlag + 1] : null
-let srcDir = argv.find((a, i) => !a.startsWith('-') && i !== folderFlag + 1)
+// 注意 folderFlag === -1 时不能按「跳过 --folder 的值」处理：那样 i !== 0 会把
+// 第一个位置参数（源目录本身）整个排除掉，导致不带 --folder 的用法直接报用法错误。
+let srcDir = argv.find(
+  (a, i) => !a.startsWith('-') && (folderFlag === -1 || i !== folderFlag + 1)
+)
 
 if (folderFlag !== -1 && !folder) {
   console.error('[Error] --folder 后面要跟音乐夹名，例如 --folder "06_网络歌曲"')

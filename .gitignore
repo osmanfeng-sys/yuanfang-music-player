@@ -22,6 +22,9 @@ memory.md
 # 待上传的音乐原文件（有版权，且体积大）—— music:upload 的源目录
 music/
 
+# R2 上旧格式歌词的本地留档（清空重传前备份的 7 个 json）
+_r2_lyrics_backup/
+
 # Cloudflare 环境
 .wrangler/
 

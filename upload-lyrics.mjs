@@ -24,7 +24,7 @@
  * 新增歌曲后先跑 `npm run generate:playlist` 刷新 playlist.json，本脚本按它匹配。
  */
 import { readdir, readFile } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
+import { basename, extname, join, relative, sep } from 'node:path'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 // 复用前端同一套解析/ID 规则，保证和 loadLyrics() 查的是同一个 key
 import { parseTrackName, generateTrackId } from './src/utils/parser.ts'
@@ -75,6 +75,23 @@ async function putLyric(track, lrcText) {
   )
 }
 
+/**
+ * 递归收集目录下的 .lrc，返回完整路径。
+ *
+ * 歌词在本地的放法有两种，都得吃下：和 mp3 同名的散在各个音乐夹里
+ * （music/05_郑源/郑源 - 一万个理由.lrc），或集中在一个 Lyric/ 目录。
+ * 所以两层都要能扫到 —— 传 music/ 时自动带上所有子夹。
+ */
+async function findLrc(root) {
+  const out = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const p = join(root, entry.name)
+    if (entry.isDirectory()) out.push(...(await findLrc(p)))
+    else if (extname(entry.name).toLowerCase() === '.lrc') out.push(p)
+  }
+  return out
+}
+
 /** 宽松归一化：去掉 [..] (..) （..） 与空白，用于文件名兜底匹配 */
 const loose = (s) =>
   s
@@ -122,7 +139,7 @@ for (const t of tracks) {
   byLoose.set(k, [...(byLoose.get(k) || []), t])
 }
 
-const files = (await readdir(dir)).filter((f) => extname(f).toLowerCase() === '.lrc')
+const files = await findLrc(dir)
 if (files.length === 0) {
   console.error(`[Error] ${dir} 下没有 .lrc 文件（本工具只收 .lrc，不支持纯文本）`)
   process.exit(1)
@@ -132,6 +149,7 @@ let ok = 0
 const problems = []
 
 for (const f of files) {
+  const rel = relative(dir, f).split(sep).join('/')
   const stem = basename(f, extname(f))
   let track = byName.get(stem)
 
@@ -140,29 +158,29 @@ for (const f of files) {
     if (cands.length === 1) {
       track = cands[0]
     } else if (cands.length > 1) {
-      problems.push([f, `宽松匹配撞到 ${cands.length} 首，请改用完整曲目名`])
+      problems.push([rel, `宽松匹配撞到 ${cands.length} 首，请改用完整曲目名`])
       continue
     }
   }
 
   if (!track) {
-    problems.push([f, '找不到对应曲目（用 npm run lyrics:list 看合法曲目名）'])
+    problems.push([rel, '找不到对应曲目（用 npm run lyrics:list 看合法曲目名）'])
     continue
   }
 
-  const lrc = decodeLrc(await readFile(join(dir, f)))
+  const lrc = decodeLrc(await readFile(f))
   if (dryRun) {
-    console.log(`· ${f}  →  ${track.name}   [dry-run]`)
+    console.log(`· ${rel}  →  ${track.name}   [dry-run]`)
     ok++
     continue
   }
 
   try {
     await putLyric(track, lrc)
-    console.log(`✓ ${f}  →  ${track.name}  (${generateTrackId(track.name)}.json)`)
+    console.log(`✓ ${rel}  →  ${track.name}  (${generateTrackId(track.name)}.json)`)
     ok++
   } catch (e) {
-    problems.push([f, e.message])
+    problems.push([rel, e.message])
   }
 }
 
