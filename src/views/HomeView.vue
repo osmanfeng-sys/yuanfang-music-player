@@ -762,9 +762,12 @@ watch(
       上一版加过，结果 Windows 开了「减少动画」时浏览器直接停掉动画，
       只剩两份静止的重复文字，看着像坏了。这是用户明确要的动效，不让系统关掉它。 */
 .home__welcome {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  /* ⚠️ 必须用 fixed 而不是 absolute：
+     要对齐的是【顶栏】那条水平线，而 .home 位于 .layout__content 内，
+     那个容器的 top 本来就是「顶栏高度 + 8px」—— absolute 够不着顶栏。 */
+  position: fixed;
+  top: calc(var(--topbar-height) / 2); /* 与「首页 / 歌单 / 浏览」同一水平线 */
+  left: 50%; /* 水平位置：保持页面正中不变 */
   transform: translate(-50%, -50%);
   /* 固定窄宽 + 圆角 + 半透明底 = 胶囊形"镂空"窗口。
      宽度必须比一份文字窄，否则文字塞得下就不会滚（短 ID 时尤其明显） */
