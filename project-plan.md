@@ -9,7 +9,8 @@
 |---|---|
 | 前端 | Vue 3.4 + TypeScript 5.3 + Vite 5 + Pinia 2 + vue-router 4 |
 | 播放内核 | APlayer 1.10（npm 包）+ hls.js 1.5（当前库全是 mp3，HLS 路径保留但空跑） |
-| 托管 / API | Cloudflare Pages（`yuanfang-music`）· Worker（`music-proxy`，独立 TS 子项目） |
+| 托管 / API | Cloudflare Pages（`yuanfang-music`）+ **Pages Functions**（接口与音频，和页面同源） |
+| 回退通道 | 独立 Worker（`music-proxy`，`worker/` 子项目）—— 代码被 `functions/` 复用，仍是可用通道 |
 | 存储 | Cloudflare R2 `music-bucket`（绑定名 `MUSIC`） |
 | 音频 | **393 首 mp3**（直传 + HTTP Range，非 HLS） |
 | 歌词 | `lyrics/<trackId>.json`（271 个）+ 索引 `playlist.json` / `durations.json` |
@@ -17,10 +18,12 @@
 | CI/CD | GitHub Actions，push 到 main 即部署；仓库公开 `osmanfeng-sys/yuanfang-music-player` |
 
 ```
-前端    https://yuanfangorganics.ccwu.cc         Pages 自定义域
-API     https://api.yuanfangorganics.ccwu.cc     Worker 自定义域
-回退    https://music-proxy.osmanfeng.workers.dev
+应用     https://yuanfang-music.pages.dev          页面 + 接口 + 音频，全部同源（唯一必需）
+自定义域 https://yuanfangorganics.ccwu.cc           Pages 自定义域，可选
+回退通道 https://api.yuanfangorganics.ccwu.cc       独立 Worker（同源同源失败时用）
 ```
+
+> **音频 URL 是相对路径**（`/proxy/01_AQUA/x.mp3`），跟着页面走 —— 换域名不用迁移数据。
 
 > ⚠️ `*.ccwu.cc` 这条 SNI 在国内被点名阻断。**开着 Clash 想访问自己的站点，靠 Clash 里那份
 > WARP 出站配置**（见 `memory.md` 与全局 `network-notes.md`）；开机后要跑一次
@@ -69,16 +72,29 @@ types/      music · playlist · api（+ index.ts barrel，`@/types` 全项目�
 404
 ```
 
-### 2.4 Worker 端点
+### 2.4 后端端点（Pages Functions，与页面同源）
+
+业务代码在 `worker/src/`，由 `functions/` 下三份薄适配挂到 Pages 上：
+
+```
+functions/                 ← 只做签名适配，业务代码零改动
+├─ list.ts                 /list
+├─ api/[[path]].ts         /api/*
+└─ proxy/[[path]].ts       /proxy/*（音频。Pages 根路径归静态托管，必须带这个前缀）
+```
 
 | 端点 | 说明 |
 |---|---|
 | `GET /list` | 曲库索引（读 R2 `playlist.json`，由 `response.ts` 补 `id`/`album`/`type`） |
 | `GET /proxy/*` | 音频流，**无鉴权**，支持 Range（206/416/`Accept-Ranges`） |
-| `GET /api/artists` · `/api/artists/:id` | 艺人列表与详情（Worker 侧从曲库派生） |
+| `GET /api/artists` · `/api/artists/:id` | 艺人列表与详情（服务端从曲库派生） |
 | `/api/playlists*` | 用户歌单 CRUD，**要 `X-User-Key`，否则 401** |
 | `GET /api/lyrics/:key` | 读 `lyrics/<key>.json`，只读 |
 | `GET /api/search` | 曲库搜索 |
+
+⚠️ **绝不能改成 `functions/[[path]].ts` 全捕获** —— 那会把 `/assets/*`、`/PIC/*`、`/bg/*`
+也交给后端、整站直接废掉。按具体路径建文件后静态资源照常托管，而且**不再需要手写
+`_routes.json`**（那个文件正是之前让 Pages 部署报 `Failed to publish your Function` 的元凶）。
 
 ### 2.5 数据流要点
 
