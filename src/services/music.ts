@@ -3,14 +3,35 @@ import { WORKER_BASE_URL } from '@/utils/constants'
 import type { Track, Artist, ArtistDetailResponse } from '@/types'
 import { parseTrackName, generateTrackId } from '@/utils/parser'
 
-/** 从媒资 URL 解析音乐夹名（R2 一级目录，如 "01_AQUA(水叮当)"） */
+/**
+ * 从媒资 URL 解析音乐夹名（R2 一级目录，如 `01_AQUA(水叮当)`）。
+ *
+ * ⚠️ 两个坑，改这里前先看懂：
+ *
+ * ① **不能用 `new URL(url)`** —— 音频 URL 现在是相对路径（`/proxy/01_AQUA/x.mp3`），
+ *    `new URL()` 对相对路径直接抛异常，被 catch 吞掉后返回 undefined。
+ *    症状就是「所有歌都归到未分类」。
+ * ② **不能直接取第一段** —— 音频挂在 `/proxy` 前缀后（Pages 的根路径归静态托管，
+ *    不带前缀会被当成找不到的静态文件 404），首段是 `proxy` 而不是音乐夹。
+ *
+ * 还有一条语义要求：**只有真正在一级目录下的才算「有音乐夹」**。
+ * 单段路径（`/proxy/foo.mp3`）说明这首歌直接躺在桶根目录 → 返回 undefined → 归「未分类」。
+ */
 function extractFolder(url: string): string | undefined {
-  try {
-    const seg = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean)[0]
-    return seg || undefined
-  } catch {
-    return undefined
-  }
+  const segs = url
+    .replace(/^[a-z]+:\/\/[^/]+/i, '') // 去掉协议+域名（兼容旧的绝对地址）
+    .replace(/^\/proxy(?=\/|$)/, '') // 去掉 /proxy 前缀
+    .split('/')
+    .filter(Boolean)
+    .map((s) => {
+      try {
+        return decodeURIComponent(s)
+      } catch {
+        return s // 恶意/损坏的 %xx 不该让整条曲目丢掉
+      }
+    })
+
+  return segs.length >= 2 ? segs[0] : undefined
 }
 
 /**

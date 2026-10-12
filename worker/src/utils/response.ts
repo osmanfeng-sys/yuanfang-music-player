@@ -85,12 +85,24 @@ export function extractParam(path: string, prefix: string): string | null {
  * 放在 Worker 侧派生，老 playlist.json 无需重扫即可生效。
  */
 function albumFromUrl(url: string): string | undefined {
+  // ⚠️ 必须和前端 src/services/music.ts 的 extractFolder 保持同一套规则：
+  // ① 不能用 new URL() —— 音频 URL 是相对路径（/proxy/01_AQUA/x.mp3），会抛异常
+  // ② 要剥掉 /proxy 前缀 —— 否则首段是 "proxy" 而不是音乐夹
+  // ③ 单段路径 = 歌在桶根目录 → 无专辑；必须返回 undefined，不能把文件名当专辑
+  const segs = url
+    .replace(/^[a-z]+:\/\/[^/]+/i, '')
+    .replace(/^\/proxy(?=\/|$)/, '')
+    .split('/')
+    .filter(Boolean)
+  if (segs.length < 2) return undefined
+
+  let first = segs[0]
   try {
-    const seg = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean)[0]
-    return seg ? seg.replace(/^\d+[_-]/, '') : undefined
+    first = decodeURIComponent(first)
   } catch {
-    return undefined
+    // 损坏的 %xx 不该让整条曲目丢掉
   }
+  return first.replace(/^\d+[_-]/, '')
 }
 
 /** 标准化 Track 对象（从原始 playlist.json 数据） */

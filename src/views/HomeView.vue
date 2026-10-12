@@ -204,7 +204,7 @@ watch(
           class="home__tab"
           :class="{ 'home__tab--active': activeTab === 'playlist' }"
           @click="activeTab = 'playlist'"
-        >播放列表</span>
+        >播放乐库</span>
         <span
           class="home__tab"
           :class="{ 'home__tab--active': activeTab === 'search' }"
@@ -302,7 +302,7 @@ watch(
         <!-- 注意：这里必须是 v-if，不能接上面列头的 v-if 成 v-else-if 链——
              否则表头一显示（有队列时必然显示），整个列表就被跳过，表现为「只有表头，没有歌」 -->
         <template v-if="activeTab === 'playing'">
-          <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放列表」挑一首吧</p>
+          <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放乐库」挑一首吧</p>
           <div
             v-for="(track, idx) in queue"
             :key="track.id"
@@ -434,7 +434,7 @@ watch(
         <div class="home__modal-body">
           <p><b>远方音乐播放器</b> — 基于 HLS 流媒体的在线音乐库。</p>
           <p><b>正在播放</b>：显示当前播放队列，点击任意曲目直接切歌。</p>
-          <p><b>播放列表</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。</p>
+          <p><b>播放乐库</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。只有直接放在存储桶根目录、不属于任何音乐夹的曲目才归为「未分类」。</p>
           <p><b>歌曲搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
           <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
           <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
