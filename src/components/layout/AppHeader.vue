@@ -285,33 +285,35 @@ function logout() {
   justify-content: center;
 }
 
-/* ===== 欢迎语（与导航链接同一水平线，循环横向滚动）===== */
+/* ===== 欢迎语：胶囊镂空底 + 内部文字循环滚动 =====
+   ⚠️ 这里【刻意不写】@media (prefers-reduced-motion: reduce) { animation: none }。
+      上一版加过，结果 Windows 开了「减少动画」时浏览器直接停掉动画，
+      只剩两份静止的重复文字 —— 看着像坏了。这是用户明确要的动效，就不让系统关掉它。 */
 .header__welcome {
-  width: 100%;
+  /* 固定窄宽 + 圆角 + 半透明底 = 胶囊形"镂空"窗口。
+     宽度必须比一份文字窄，否则文字塞得下就不会滚（短 ID 时尤其明显） */
+  width: 156px;
+  height: 24px;
+  display: flex;
+  align-items: center;
   overflow: hidden;
-  pointer-events: none;
-  /* 两侧淡出，文字进出画面不生硬 */
-  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
 .header__welcome-track {
-  display: inline-flex;
+  display: flex;
   white-space: nowrap;
-  /* 常驻滚动。位移 -50% = 一份文字的宽度，两份接上就是无缝循环 */
-  animation: header-welcome-scroll 14s linear infinite;
+  /* 位移 -50% = 一份文字的宽度（含右侧留白），两份首尾相接 → 无缝循环 */
+  animation: header-welcome-scroll 9s linear infinite;
+  will-change: transform;
 }
 
 @keyframes header-welcome-scroll {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
-}
-
-/* 用户偏好减少动效时停下 */
-@media (prefers-reduced-motion: reduce) {
-  .header__welcome-track {
-    animation: none;
-  }
 }
 
 .header__welcome-text {
@@ -320,8 +322,8 @@ function logout() {
   font-weight: 500;
   letter-spacing: 0.5px;
   color: #d4af37; /* 金色，与顶栏 @AI涛哥 同一套视觉 */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
-  padding-right: 3rem; /* 两份之间的间隔，也是循环的视觉呼吸 */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  padding: 0 1.5rem 0 1rem; /* 左侧留一点进入余量，右侧留两份之间的间隔 */
 }
 
 .header__right {

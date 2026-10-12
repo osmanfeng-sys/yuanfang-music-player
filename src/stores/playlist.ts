@@ -28,6 +28,22 @@ export const usePlaylistStore = defineStore('playlist', () => {
   /** 错误信息 */
   const error = ref<string | null>(null)
 
+  /**
+   * **云端写入失败过**的歌单 id。
+   *
+   * 为什么需要它：歌单的每次改动都是「立即写云端」，正常情况下不存在"待保存"。
+   * 真正的"没保存上"只发生在写入失败时 —— 而失败以前只是弹一条 error 就过去了，
+   * 用户看到列表里歌还在（本地 state 已改），完全不知道云端其实没落。
+   * 这个集合就是给「同步」按钮的橙/绿状态用的。
+   */
+  const unsyncedIds = ref<string[]>([])
+
+  function markUnsynced(id: string, unsynced: boolean) {
+    unsyncedIds.value = unsynced
+      ? Array.from(new Set([...unsyncedIds.value, id]))
+      : unsyncedIds.value.filter((x) => x !== id)
+  }
+
   // ===== Getters =====
 
   const systemPlaylists = computed(() =>
@@ -271,6 +287,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
         return null
       }
       playlists.value[created.id] = { ...created, source: 'user' }
+      markUnsynced(created.id, false)
       return playlists.value[created.id]
     }
 
@@ -308,10 +325,29 @@ export const usePlaylistStore = defineStore('playlist', () => {
 
     if (hasCloud()) {
       const ok = await apiUpdatePlaylist(id, data)
+      markUnsynced(id, !ok)
       if (!ok) error.value = '云端保存失败'
     } else {
       persistLocal()
     }
+  }
+
+  /**
+   * 把某个歌单的当前内容重新推给云端 —— 给「同步」按钮用。
+   * 只在该歌单写入失败过（在 unsyncedIds 里）时才需要调用。
+   */
+  async function syncPlaylist(id: string): Promise<boolean> {
+    const p = playlists.value[id]
+    if (!p || !hasCloud()) return false
+
+    const ok = await apiUpdatePlaylist(id, {
+      name: p.name,
+      trackIds: p.trackIds,
+      ...(p.description ? { description: p.description } : {})
+    })
+    markUnsynced(id, !ok)
+    error.value = ok ? null : '同步失败，稍后再试'
+    return ok
   }
 
   async function deletePlaylist(id: string): Promise<void> {
@@ -371,6 +407,8 @@ export const usePlaylistStore = defineStore('playlist', () => {
     updatePlaylist,
     deletePlaylist,
     addToPlaylist,
-    removeFromPlaylist
+    removeFromPlaylist,
+    unsyncedIds,
+    syncPlaylist
   }
 })

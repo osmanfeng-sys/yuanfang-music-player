@@ -7,6 +7,7 @@ import { usePlaylist } from '@/composables/usePlaylist'
 import PlaylistItem from '@/components/playlist/PlaylistItem.vue'
 import AddTracksModal from '@/components/playlist/AddTracksModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { loadCredentials } from '@/utils/userKey'
 import type { Track } from '@/types'
 
 const route = useRoute()
@@ -20,6 +21,27 @@ const playlist = computed(() => playlistStore.getPlaylistById(playlistId))
 const tracks = computed<Track[]>(() =>
   playlist.value ? getTracksFromPlaylist(playlist.value) : []
 )
+
+// ===== 同步状态 =====
+
+const cloudOn = loadCredentials() !== null
+
+/** 该歌单是否有没写进云端的改动（写入失败过） */
+const isUnsynced = computed(() =>
+  playlist.value ? playlistStore.unsyncedIds.includes(playlist.value.id) : false
+)
+
+/** 按钮文案与状态：仅本机 / 待同步（橙，可点）/ 已同步（绿，禁用） */
+const syncState = computed(() => {
+  if (!cloudOn) return { key: 'local', text: '仅本机', title: '未开启云端同步，歌单只存在这台设备' }
+  if (isUnsynced.value) return { key: 'pending', text: '同步', title: '有改动没同步到云端，点这里重试' }
+  return { key: 'synced', text: '已同步', title: '已保存到云端' }
+})
+
+async function doSync() {
+  if (!playlist.value || !isUnsynced.value) return
+  await playlistStore.syncPlaylist(playlist.value.id)
+}
 
 // ===== 从曲库添加 =====
 
@@ -103,6 +125,17 @@ function goBack() {
             </button>
             <button class="playlist-detail__add-toggle" @click="showAdd = true">
               ＋ 从曲库添加
+            </button>
+            <!-- 同步状态：仅本机（灰）/ 待同步（橙，可点）/ 已同步（绿，禁用）。
+                 "未保存"只发生在云端写入失败时 —— 正常改动是即时写云端的 -->
+            <button
+              class="playlist-detail__sync"
+              :class="`playlist-detail__sync--${syncState.key}`"
+              :disabled="syncState.key !== 'pending'"
+              :title="syncState.title"
+              @click="doSync"
+            >
+              {{ syncState.text }}
             </button>
           </div>
         </div>
@@ -252,6 +285,38 @@ function goBack() {
 .playlist-detail__add-toggle:hover {
   color: var(--text-primary);
   border-color: var(--text-tertiary);
+}
+
+/* 同步状态按钮：颜色即状态，不需要文字解释 */
+.playlist-detail__sync {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  cursor: default;
+}
+
+.playlist-detail__sync--local {
+  color: var(--text-tertiary);
+  background: transparent;
+  border-color: var(--bg-elevated);
+}
+
+.playlist-detail__sync--pending {
+  color: #fff;
+  background: #e8912d; /* 橙：有改动没同步，可点重试 */
+  cursor: pointer;
+}
+
+.playlist-detail__sync--pending:hover {
+  background: #f0a044;
+}
+
+.playlist-detail__sync--synced {
+  color: #4cd964; /* 绿：已落云端，不可点 */
+  background: transparent;
+  border-color: rgba(76, 217, 100, 0.5);
 }
 
 .playlist-detail__tracks {
