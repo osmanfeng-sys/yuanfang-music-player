@@ -5,6 +5,7 @@ import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { usePlaylist } from '@/composables/usePlaylist'
 import PlaylistItem from '@/components/playlist/PlaylistItem.vue'
+import AddTracksModal from '@/components/playlist/AddTracksModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { Track } from '@/types'
 
@@ -23,21 +24,16 @@ const tracks = computed<Track[]>(() =>
 // ===== 从曲库添加 =====
 
 const showAdd = ref(false)
-const keyword = ref('')
 
-/** 复用 store 已有的全文搜索；截断到 50 条免得一次渲染太重 */
-const searchResults = computed<Track[]>(() => {
-  const q = keyword.value.trim()
-  return q ? playlistStore.searchTracks(q).slice(0, 50) : []
-})
+/** 已在歌单里的 id —— 传给弹层置灰，从根上避免重复添加 */
+const excludeIds = computed(() => playlist.value?.trackIds ?? [])
 
-function isInPlaylist(trackId: string) {
-  return playlist.value?.trackIds.includes(trackId) ?? false
-}
-
-async function addTrack(trackId: string) {
-  if (!playlist.value || isInPlaylist(trackId)) return
-  await playlistStore.addToPlaylist(playlist.value.id, trackId)
+async function onConfirmAdd(ids: string[]) {
+  if (!playlist.value) return
+  for (const id of ids) {
+    await playlistStore.addToPlaylist(playlist.value.id, id)
+  }
+  showAdd.value = false
 }
 
 onMounted(async () => {
@@ -105,36 +101,22 @@ function goBack() {
               </svg>
               播放全部
             </button>
-            <button class="playlist-detail__add-toggle" @click="showAdd = !showAdd">
-              {{ showAdd ? '收起' : '＋ 从曲库添加' }}
+            <button class="playlist-detail__add-toggle" @click="showAdd = true">
+              ＋ 从曲库添加
             </button>
           </div>
         </div>
       </div>
 
-      <!-- 从曲库添加：搜索框 + 结果，点结果（或行尾的 ＋）即加入本歌单 -->
-      <div v-if="showAdd" class="playlist-detail__add-panel">
-        <input
-          v-model="keyword"
-          class="playlist-detail__search"
-          type="search"
-          placeholder="搜索歌名 / 歌手，点结果即加入本歌单"
-        />
-        <p v-if="keyword.trim() && searchResults.length === 0" class="playlist-detail__add-empty">
-          没有匹配的曲目
-        </p>
-        <div v-else class="playlist-detail__add-results">
-          <PlaylistItem
-            v-for="(t, i) in searchResults"
-            :key="t.id"
-            :track="t"
-            :index="i"
-            :added="isInPlaylist(t.id)"
-            @click="addTrack(t.id)"
-            @add-to-playlist="addTrack($event)"
-          />
-        </div>
-      </div>
+      <!-- 从曲库添加：一级音乐夹 → 二级曲目 → 勾选多首一次加入。
+           换成弹层是因为原来的「搜索 + 单首点加」有两个实际痛点：
+           一次只能加一首，而且必须先知道歌名 —— 想「把这张专辑整张加进去」很难用 -->
+      <AddTracksModal
+        :open="showAdd"
+        :exclude-ids="excludeIds"
+        @close="showAdd = false"
+        @confirm="onConfirmAdd"
+      />
 
       <div class="playlist-detail__tracks">
         <EmptyState
@@ -270,41 +252,6 @@ function goBack() {
 .playlist-detail__add-toggle:hover {
   color: var(--text-primary);
   border-color: var(--text-tertiary);
-}
-
-/* ===== 从曲库添加 ===== */
-.playlist-detail__add-panel {
-  margin-bottom: var(--spacing-lg);
-  padding-bottom: var(--spacing-lg);
-  border-bottom: 1px solid var(--bg-tertiary);
-}
-
-.playlist-detail__search {
-  width: 100%;
-  height: 34px;
-  padding: 0 12px;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-full);
-  outline: none;
-}
-
-.playlist-detail__search:focus {
-  border-color: var(--color-primary);
-}
-
-.playlist-detail__add-empty {
-  padding: var(--spacing-md) 0;
-  font-size: 0.85rem;
-  color: var(--text-tertiary);
-}
-
-.playlist-detail__add-results {
-  margin-top: var(--spacing-sm);
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 .playlist-detail__tracks {

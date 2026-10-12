@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import ArtistList from '@/components/artist/ArtistList.vue'
+import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { fetchArtists } from '@/services/music'
 import { formatTime } from '@/utils/format'
 import type { Artist, Track } from '@/types'
@@ -13,6 +14,9 @@ const playerStore = usePlayerStore()
 /** 艺人网格沿用原来的数据源；为空时整块隐藏，不占版面 */
 const artists = ref<Artist[]>([])
 const keyword = ref('')
+
+/** 正在「加入歌单」弹层里操作的那首；null = 弹层关闭 */
+const addTarget = ref<Track | null>(null)
 
 const loading = computed(() => playlistStore.loading)
 
@@ -91,9 +95,23 @@ function isCurrent(track: Track) {
           <span class="browse__row-dur">
             {{ track.duration ? formatTime(track.duration) : '--:--' }}
           </span>
+          <span class="browse__row-add">
+            <button
+              class="browse__row-add-btn"
+              title="加入歌单"
+              aria-label="加入歌单"
+              @click.stop="addTarget = track"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 000-7.8z" />
+              </svg>
+            </button>
+          </span>
         </div>
       </div>
     </section>
+    <!-- 「加入歌单」弹层：点任意一行的心形按钮打开 -->
+    <AddToPlaylistModal :track="addTarget" @close="addTarget = null" />
   </main>
 </template>
 
@@ -227,6 +245,35 @@ function isCurrent(track: Track) {
   text-align: right;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+/* 「加入歌单」列 */
+.browse__row-add {
+  width: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.browse__row-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.browse__row-add-btn:hover {
+  color: var(--color-primary);
+  background: var(--bg-elevated);
+  transform: scale(1.15);
 }
 
 @media (max-width: 900px) {

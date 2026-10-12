@@ -7,7 +7,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
 import { loadLyrics } from '@/services/lyrics'
-import { currentUserId } from '@/utils/userKey'
+import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
 
@@ -119,11 +119,8 @@ const listCount = computed(() => {
 
 const showListHead = computed(() => !loading.value && !error.value && listCount.value > 0)
 
-/**
- * 已登录时页面正中显示的欢迎语；未登录（空串）整行不渲染。
- * 用 userKey 里的**响应式镜像**，这样在顶栏登录/退出后立即更新，不用刷新页面。
- */
-const accountId = currentUserId
+/** 正在「加入歌单」弹层里操作的那首；null = 弹层关闭 */
+const addTarget = ref<Track | null>(null)
 
 // ===== 列头排序 =====
 
@@ -242,13 +239,6 @@ watch(
 
 <template>
   <main class="home">
-    <!-- 欢迎语：整页正中央浮层，未登录（accountId 为空）整行不渲染。
-         容器 pointer-events:none —— 浮在内容之上但不抢点击，
-         否则正中间那几行曲目就点不动了 -->
-    <div v-if="accountId" class="home__welcome">
-      <span class="home__welcome-text">欢迎 “{{ accountId }}” 聆听</span>
-    </div>
-
     <!-- ===== 左：主区 ===== -->
     <section class="home__main">
       <!-- 顶部按钮条 -->
@@ -371,6 +361,12 @@ watch(
             :class="{ 'home__head-btn--on': sortKey === 'duration' }"
             @click="toggleSort('duration')"
           >时长<span class="home__head-arrow">{{ sortArrow('duration') }}</span></button>
+          <!-- 每行的「加入歌单」列，表头只放个心形做标识 -->
+          <span class="home__row-add">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 000-7.8z" />
+            </svg>
+          </span>
         </div>
 
         <!-- 正在播放 -->
@@ -390,6 +386,18 @@ watch(
             <span class="home__row-artist">{{ track.artist }}</span>
             <span class="home__row-album">{{ albumOf(track) }}</span>
             <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+            <span class="home__row-add">
+              <button
+                class="home__row-add-btn"
+                title="加入歌单"
+                aria-label="加入歌单"
+                @click.stop="addTarget = track"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 000-7.8z" />
+                </svg>
+              </button>
+            </span>
           </div>
         </template>
 
@@ -430,6 +438,18 @@ watch(
               <span class="home__row-artist">{{ track.artist }}</span>
               <span class="home__row-album">{{ albumOf(track) }}</span>
               <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+              <span class="home__row-add">
+                <button
+                  class="home__row-add-btn"
+                  title="加入歌单"
+                  aria-label="加入歌单"
+                  @click.stop="addTarget = track"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 000-7.8z" />
+                  </svg>
+                </button>
+              </span>
             </div>
           </template>
         </template>
@@ -460,6 +480,18 @@ watch(
             <span class="home__row-artist">{{ track.artist }}</span>
             <span class="home__row-album">{{ albumOf(track) }}</span>
             <span class="home__row-dur">{{ track.duration ? formatTime(track.duration) : '--:--' }}</span>
+            <span class="home__row-add">
+              <button
+                class="home__row-add-btn"
+                title="加入歌单"
+                aria-label="加入歌单"
+                @click.stop="addTarget = track"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l8.8 8.8 8.8-8.8a5.5 5.5 0 000-7.8z" />
+                </svg>
+              </button>
+            </span>
           </div>
         </template>
       </div>
@@ -519,6 +551,8 @@ watch(
         </div>
       </div>
     </div>
+    <!-- 「加入歌单」弹层：点任意一行的心形按钮打开 -->
+    <AddToPlaylistModal :track="addTarget" @close="addTarget = null" />
   </main>
 </template>
 
@@ -696,34 +730,6 @@ watch(
   user-select: none;
 }
 
-/* ===== 欢迎语：整页正中央浮层 =====
-   容器 pointer-events:none —— 浮在内容之上但不抢点击，
-   否则它会盖住正中间那几行曲目、那一块就点不动了 */
-.home__welcome {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.home__welcome-text {
-  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
-  font-size: 13px;              /* 与顶栏 @AI涛哥 同号 */
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  color: #d4af37;               /* 金色 */
-  padding: 5px 14px;
-  border-radius: var(--radius-full);
-  background: rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.65);
-  white-space: nowrap;
-}
-
 /* 列头：复用行内类名，保证列头与数据行严格对齐 */
 .home__head {
   display: flex;
@@ -832,6 +838,37 @@ watch(
 .home__row-dur {
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+
+/* 「加入歌单」列：窄固定宽。表头只放个心形做标识，行内是可点的按钮。
+   不做 hover 才显形 —— 触摸屏没有 hover，那样等于没这个功能 */
+.home__row-add {
+  width: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.home__row-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.home__row-add-btn:hover {
+  color: var(--color-primary);
+  background: var(--bg-elevated);
+  transform: scale(1.15);
 }
 
 .home__empty {

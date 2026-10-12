@@ -4,7 +4,8 @@ import {
   loadCredentials,
   saveCredentials,
   clearCredentials,
-  deriveUserKey
+  deriveUserKey,
+  currentUserId
 } from '@/utils/userKey'
 
 /**
@@ -118,7 +119,16 @@ function logout() {
       </nav>
     </div>
 
-    <span class="header__spacer" />
+    <!-- 欢迎语：占据导航与右侧按钮之间的空档，与「首页/歌单/浏览」同一水平线。
+         文字复制一份做无缝循环滚动（动画位移 -50% 正好等于一份的宽度）。 -->
+    <div class="header__spacer">
+      <div v-if="currentUserId" class="header__welcome">
+        <div class="header__welcome-track">
+          <span class="header__welcome-text">欢迎 “{{ currentUserId }}” 聆听</span>
+          <span class="header__welcome-text" aria-hidden="true">欢迎 “{{ currentUserId }}” 聆听</span>
+        </div>
+      </div>
+    </div>
 
     <div class="header__right">
       <button
@@ -265,9 +275,53 @@ function logout() {
   color: #fff;
 }
 
-/* 顶栏中部留白：搜索框已移除，核心入口在主页按钮条（对齐参考站） */
+/* 顶栏中部留白：搜索框已移除，核心入口在主页按钮条（对齐参考站）。
+   同时承载欢迎语，所以要做个 flex 容器居中它 */
 .header__spacer {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== 欢迎语（与导航链接同一水平线，循环横向滚动）===== */
+.header__welcome {
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  /* 两侧淡出，文字进出画面不生硬 */
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+}
+
+.header__welcome-track {
+  display: inline-flex;
+  white-space: nowrap;
+  /* 常驻滚动。位移 -50% = 一份文字的宽度，两份接上就是无缝循环 */
+  animation: header-welcome-scroll 14s linear infinite;
+}
+
+@keyframes header-welcome-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* 用户偏好减少动效时停下 */
+@media (prefers-reduced-motion: reduce) {
+  .header__welcome-track {
+    animation: none;
+  }
+}
+
+.header__welcome-text {
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #d4af37; /* 金色，与顶栏 @AI涛哥 同一套视觉 */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+  padding-right: 3rem; /* 两份之间的间隔，也是循环的视觉呼吸 */
 }
 
 .header__right {
