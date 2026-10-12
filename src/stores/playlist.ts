@@ -235,7 +235,9 @@ export const usePlaylistStore = defineStore('playlist', () => {
     if (hasCloud()) {
       const remote = await fetchUserPlaylists()
       if (remote === null) {
-        error.value = '云端歌单读取失败 —— 检查设置页的 ID / 密码'
+        error.value =
+          '云端歌单读取失败：接口不可达或 ID/密码不对。' +
+          '（若当前网络连不上 api.yuanfangorganics.ccwu.cc，可在顶栏人像菜单里退出登录，改用本机模式）'
         return
       }
       for (const p of remote) {
@@ -263,7 +265,9 @@ export const usePlaylistStore = defineStore('playlist', () => {
         ...(description ? { description } : {})
       })
       if (!created) {
-        error.value = '云端创建歌单失败'
+        error.value =
+          '云端创建失败：接口不可达或凭据失效。' +
+          '（若当前网络连不上 api.yuanfangorganics.ccwu.cc，可在顶栏人像菜单里退出登录，改用本机模式）'
         return null
       }
       playlists.value[created.id] = { ...created, source: 'user' }

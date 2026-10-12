@@ -59,7 +59,15 @@ async function onRename(id: string, name: string) {
       </button>
     </div>
 
-    <p v-if="playlistStore.error" class="playlists__error">{{ playlistStore.error }}</p>
+    <!-- 失败信息做成显眼横幅：歌单功能出问题时最常见的原因就是云端接口不可达，
+         原来只是一行灰色小字，很容易没看见就当成"点了没反应" -->
+    <p v-if="playlistStore.error" class="playlists__error">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" />
+      </svg>
+      <span>{{ playlistStore.error }}</span>
+    </p>
 
     <MyPlaylists
       :playlists="playlists"
@@ -139,8 +147,21 @@ async function onRename(id: string, name: string) {
 }
 
 .playlists__error {
-  padding: 0 var(--spacing-lg) var(--spacing-sm);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin: 0 var(--spacing-lg) var(--spacing-md);
+  padding: 10px 12px;
   font-size: 0.8rem;
-  color: #e74c3c;
+  line-height: 1.6;
+  color: #ffb4b4;
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.5);
+  border-radius: var(--radius-md);
+}
+
+.playlists__error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 </style>
