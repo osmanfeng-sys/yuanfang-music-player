@@ -1,7 +1,17 @@
-name = "music-proxy"
-main = "worker/dist/worker.js"
+# 【Pages 项目】配置 —— 前端静态资源 + Pages Functions（API）
+#
+# 原 Worker 的配置已搬到 worker/wrangler.toml：两者的 name / main 语义不同，
+# 放同一个文件会互相干扰（Worker 的 name 是 Worker 名，Pages 的是 Pages 项目名）。
+#
+# functions/ 目录下的三个入口（list / api / proxy）由 Pages 自动打包部署，
+# 不再需要 esbuild 那一步。
+name = "yuanfang-music"
+pages_build_output_dir = "dist"
 compatibility_date = "2026-07-21"
 
+# Pages Functions 的 R2 绑定。binding 名必须和 worker/src/utils/types.ts 的 Env 一致。
+# 若这条在部署时没生效，就去 Cloudflare Dashboard → Pages → yuanfang-music →
+# Settings → Functions → R2 bucket bindings 手动加一个 MUSIC → music-bucket。
 [[r2_buckets]]
 binding = "MUSIC"
 bucket_name = "music-bucket"

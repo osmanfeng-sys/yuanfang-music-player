@@ -10,7 +10,11 @@ import type { Env } from '../utils/types'
  * 老的 HLS 分片同样受益（hls.js 也会按需拉取）。
  */
 export async function handleProxy(request: Request, env: Env, url: URL): Promise<Response> {
-  const decodedKey = decodeURIComponent(url.pathname.substring(1))
+  // 兼容两种形态：老的独立 Worker 在**根路径**上提供音频（`/01_AQUA/x.mp3`），
+  // 迁到 Pages Functions 后音频必须挂在 `/proxy/` 前缀下（`/proxy/01_AQUA/x.mp3`）——
+  // 因为 Pages 的根路径归静态托管，`/01_AQUA/...` 会被当成找不到的静态文件直接 404。
+  // 这里把 `/proxy` 前缀剥掉再当 R2 key，新旧两条路同时可用，不用一次性切干净。
+  const decodedKey = decodeURIComponent(url.pathname.replace(/^\/proxy(?=\/|$)/, '').substring(1))
 
   if (!decodedKey) {
     return new Response('Music Server is Running.', { status: 200 })

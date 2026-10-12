@@ -60,8 +60,14 @@ async function generatePlaylist() {
             const track = {
               name,
               // 分段编码，保留真实 / 路径分隔符（否则 hls.js 无法解析相对路径）
-              // 使用自定义域名（workers.dev 域名在中国大陆被屏蔽）
-              url: `https://api.yuanfangorganics.ccwu.cc/${item.Key.split('/').map(encodeURIComponent).join('/')}`,
+              //
+              // ⚠️ 用【相对路径】而不是绝对地址，这是刻意的：
+              // 以前写死 `https://api.yuanfangorganics.ccwu.cc/...`，于是"换域名"
+              // 就变成一次 393 条 URL 的数据迁移。改成相对路径后，音频跟着页面走 ——
+              // 页面在 pages.dev 上就请求 pages.dev，换域名一行代码都不用动。
+              // `/proxy/` 前缀是必需的：Pages 的根路径归静态托管，不走这个前缀
+              // 会被当成找不到的静态文件直接 404。
+              url: `/proxy/${item.Key.split('/').map(encodeURIComponent).join('/')}`,
               type: isHls ? 'hls' : 'mp3'
             };
             if (durations[item.Key]) track.duration = durations[item.Key];

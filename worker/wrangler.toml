@@ -1,0 +1,15 @@
+# 【独立 Worker】配置 —— music-proxy
+#
+# 迁移到 Pages Functions 后，这个 Worker 变成**回退通道**（绑在
+# api.yuanfangorganics.ccwu.cc 上）。它的代码仍被 functions/ 复用，
+# 所以不要删 —— 只是不再是主链路。
+#
+# 部署（在 worker/ 目录下执行，才会读到这份配置）：
+#   cd worker && npm run build && npx wrangler deploy
+name = "music-proxy"
+main = "dist/worker.js"
+compatibility_date = "2026-07-21"
+
+[[r2_buckets]]
+binding = "MUSIC"
+bucket_name = "music-bucket"
