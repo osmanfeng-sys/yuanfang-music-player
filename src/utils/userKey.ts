@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { STORAGE_PREFIX } from './constants'
 
 /** localStorage 键名 */
@@ -48,6 +49,7 @@ export function saveCredentials(id: string, pass: string) {
     // 隐私模式下 localStorage 可能不可写，忽略
   }
   cacheRaw = ''
+  syncUserId()
 }
 
 /** 清除凭据 —— 之后请求不再带 key，歌单退回「只存本机」 */
@@ -59,7 +61,23 @@ export function clearCredentials() {
     // 同上
   }
   cacheRaw = ''
+  syncUserId()
 }
+
+/**
+ * 当前用户 ID 的**响应式镜像**，只给界面显示用（如首页欢迎语）。
+ *
+ * 凭据本身仍以 localStorage 为准，这个 ref 只是让它变化时能驱动 UI ——
+ * 否则在顶栏登录/退出后，欢迎语要刷新页面才更新。
+ */
+export const currentUserId = ref('')
+
+function syncUserId() {
+  currentUserId.value = loadCredentials()?.id ?? ''
+}
+
+// 模块加载时同步一次（loadCredentials 内部已 try/catch，非浏览器环境也不会抛）
+syncUserId()
 
 // 派生结果缓存：api.ts 每个请求都会问一次，SHA-256 虽快也没必要反复算。
 // 用「原文」当缓存键，凭据一变自动失效，不用手工 invalidate。

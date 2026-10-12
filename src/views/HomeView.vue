@@ -7,6 +7,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
 import { loadLyrics } from '@/services/lyrics'
+import { currentUserId } from '@/utils/userKey'
 import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
 
@@ -118,6 +119,56 @@ const listCount = computed(() => {
 
 const showListHead = computed(() => !loading.value && !error.value && listCount.value > 0)
 
+/**
+ * 已登录时页面正中显示的欢迎语；未登录（空串）整行不渲染。
+ * 用 userKey 里的**响应式镜像**，这样在顶栏登录/退出后立即更新，不用刷新页面。
+ */
+const accountId = currentUserId
+
+// ===== 列头排序 =====
+
+type SortKey = 'title' | 'artist' | 'album' | 'duration'
+
+const sortKey = ref<SortKey | null>(null)
+const sortAsc = ref(true)
+
+/** 点同列表头切换升降序，点其它列则从升序开始 */
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortAsc.value = !sortAsc.value
+  } else {
+    sortKey.value = key
+    sortAsc.value = true
+  }
+}
+
+function sortArrow(key: SortKey) {
+  if (sortKey.value !== key) return '⇅'
+  return sortAsc.value ? '▲' : '▼'
+}
+
+/**
+ * 排序只作用于**展示层**，不改动 store 里的数据。
+ * 中英文混排用 localeCompare('zh-Hans-CN')，否则中文按 Unicode 码位排会乱。
+ * 时长缺值时当 0，排到最前（升序）。
+ */
+function sortList(list: Track[]): Track[] {
+  const key = sortKey.value
+  if (!key) return list
+  const dir = sortAsc.value ? 1 : -1
+  const pick = (t: Track): string =>
+    key === 'album' ? albumOf(t) : key === 'artist' ? t.artist : t.title
+
+  return [...list].sort((a, b) => {
+    if (key === 'duration') return ((a.duration ?? 0) - (b.duration ?? 0)) * dir
+    return pick(a).localeCompare(pick(b), 'zh-Hans-CN') * dir
+  })
+}
+
+const sortedQueue = computed(() => sortList(queue.value))
+const sortedFolderTracks = computed(() => sortList(openedTracks.value))
+const sortedSearch = computed(() => sortList(searchResults.value))
+
 // ===== 播放 =====
 
 function playFrom(list: Track[], track: Track) {
@@ -191,6 +242,13 @@ watch(
 
 <template>
   <main class="home">
+    <!-- 欢迎语：整页正中央浮层，未登录（accountId 为空）整行不渲染。
+         容器 pointer-events:none —— 浮在内容之上但不抢点击，
+         否则正中间那几行曲目就点不动了 -->
+    <div v-if="accountId" class="home__welcome">
+      <span class="home__welcome-text">欢迎 “{{ accountId }}” 聆听</span>
+    </div>
+
     <!-- ===== 左：主区 ===== -->
     <section class="home__main">
       <!-- 顶部按钮条 -->
@@ -289,13 +347,30 @@ watch(
           @retry="loadMusic"
         />
 
-        <!-- 列头：复用行内类名，保证三列对齐 -->
+        <!-- 列头：复用行内类名，保证与数据行严格对齐。
+             四列等宽（等距排列）；点表头排序，再点一次反向 -->
         <div v-if="showListHead" class="home__head">
           <span class="home__row-num">#</span>
-          <span class="home__row-title">歌名</span>
-          <span class="home__row-artist">歌手</span>
-          <span class="home__row-album">专辑</span>
-          <span class="home__row-dur">时长</span>
+          <button
+            class="home__row-title home__head-btn"
+            :class="{ 'home__head-btn--on': sortKey === 'title' }"
+            @click="toggleSort('title')"
+          >歌名<span class="home__head-arrow">{{ sortArrow('title') }}</span></button>
+          <button
+            class="home__row-artist home__head-btn"
+            :class="{ 'home__head-btn--on': sortKey === 'artist' }"
+            @click="toggleSort('artist')"
+          >歌手<span class="home__head-arrow">{{ sortArrow('artist') }}</span></button>
+          <button
+            class="home__row-album home__head-btn"
+            :class="{ 'home__head-btn--on': sortKey === 'album' }"
+            @click="toggleSort('album')"
+          >专辑<span class="home__head-arrow">{{ sortArrow('album') }}</span></button>
+          <button
+            class="home__row-dur home__head-btn"
+            :class="{ 'home__head-btn--on': sortKey === 'duration' }"
+            @click="toggleSort('duration')"
+          >时长<span class="home__head-arrow">{{ sortArrow('duration') }}</span></button>
         </div>
 
         <!-- 正在播放 -->
@@ -304,11 +379,11 @@ watch(
         <template v-if="activeTab === 'playing'">
           <p v-if="queue.length === 0" class="home__empty">当前没有播放队列，去「播放乐库」挑一首吧</p>
           <div
-            v-for="(track, idx) in queue"
+            v-for="(track, idx) in sortedQueue"
             :key="track.id"
             class="home__row"
             :class="{ 'home__row--playing': currentId === track.id }"
-            @click="playFrom(queue, track)"
+            @click="playFrom(sortedQueue, track)"
           >
             <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
             <span class="home__row-title">{{ track.title }}</span>
@@ -344,11 +419,11 @@ watch(
               ‹ 返回音乐夹列表
             </div>
             <div
-              v-for="(track, idx) in openedTracks"
+              v-for="(track, idx) in sortedFolderTracks"
               :key="track.id"
               class="home__row"
               :class="{ 'home__row--playing': currentId === track.id }"
-              @click="playFrom(openedTracks, track)"
+              @click="playFrom(sortedFolderTracks, track)"
             >
               <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
               <span class="home__row-title">{{ track.title }}</span>
@@ -374,11 +449,11 @@ watch(
           </div>
           <p v-if="keyword.trim() && searchResults.length === 0" class="home__empty">没有匹配的歌曲</p>
           <div
-            v-for="(track, idx) in searchResults"
+            v-for="(track, idx) in sortedSearch"
             :key="track.id"
             class="home__row"
             :class="{ 'home__row--playing': currentId === track.id }"
-            @click="playFrom(searchResults, track)"
+            @click="playFrom(sortedSearch, track)"
           >
             <span class="home__row-num">{{ currentId === track.id ? '♪' : idx + 1 }}</span>
             <span class="home__row-title">{{ track.title }}</span>
@@ -621,7 +696,35 @@ watch(
   user-select: none;
 }
 
-/* 列头：复用行内类名，保证「歌名 / 歌手 / 专辑」三列与行严格对齐 */
+/* ===== 欢迎语：整页正中央浮层 =====
+   容器 pointer-events:none —— 浮在内容之上但不抢点击，
+   否则它会盖住正中间那几行曲目、那一块就点不动了 */
+.home__welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.home__welcome-text {
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-size: 13px;              /* 与顶栏 @AI涛哥 同号 */
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #d4af37;               /* 金色 */
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+}
+
+/* 列头：复用行内类名，保证列头与数据行严格对齐 */
 .home__head {
   display: flex;
   align-items: center;
@@ -635,6 +738,33 @@ watch(
 .home__head .home__row-album,
 .home__head .home__row-dur {
   color: var(--text-faint);
+}
+
+/* 表头按钮：点一次升序，再点一次降序 */
+.home__head-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.home__head-btn:hover {
+  color: var(--text-secondary);
+}
+
+.home__head-btn--on {
+  color: var(--color-primary) !important;
+}
+
+.home__head-arrow {
+  font-size: 9px;
+  opacity: 0.75;
 }
 
 .home__row {
@@ -676,8 +806,14 @@ watch(
   color: var(--accent);
 }
 
-.home__row-title {
-  flex: 1;
+/* 歌名 / 歌手 / 专辑 / 时长 —— 四列等宽（等距排列）。
+   尺寸共用一套：表头与数据行复用同一批类名，宽度不一致就对不齐了。
+   原来分别是 flex:1 / 200px / 240px / 52px，间距不均匀。 */
+.home__row-title,
+.home__row-artist,
+.home__row-album,
+.home__row-dur {
+  flex: 1 1 0;
   min-width: 0;
   padding-right: 12px;
   white-space: nowrap;
@@ -686,29 +822,14 @@ watch(
 }
 
 .home__row-artist {
-  width: 200px;
-  flex-shrink: 0;
-  padding-right: 12px;
   color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .home__row-album {
-  width: 240px;
-  flex-shrink: 0;
-  padding-right: 12px;
   color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .home__row-dur {
-  width: 52px;
-  flex-shrink: 0;
-  text-align: right;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
