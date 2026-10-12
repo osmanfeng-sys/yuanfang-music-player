@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { useUserStore } from '@/stores/user'
@@ -11,6 +12,7 @@ import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
 
+const route = useRoute()
 const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
 const userStore = useUserStore()
@@ -79,12 +81,21 @@ function seedQueue() {
 }
 
 onMounted(async () => {
+  // 支持 `/?tab=playing|playlist|search` 直接落在指定页签
+  // （歌单详情页的「正在播放」按钮靠它跳过来）
+  const wanted = route.query.tab
+  if (wanted === 'playing' || wanted === 'playlist' || wanted === 'search') {
+    activeTab.value = wanted
+  }
+
   await loadMusic()
   seedQueue()
   // 曲目时长后台补（/list 不下发 duration），延迟启动，别跟首屏起播抢带宽
   setTimeout(() => void playlistStore.fillDurations(playlistStore.allTracks), 6000)
-  // 起播没成功（曲库为空或加载失败）就落在「播放列表」，别让首屏是一片空白
-  if (!playerStore.currentTrack) activeTab.value = 'playlist'
+  // 起播没成功（曲库为空或加载失败）就落在「播放乐库」，别让首屏是一片空白。
+  // ⚠️ 但 URL 明确指定了页签就尊重它 —— 否则「正在播放」那个跳转按钮
+  //    在没在播歌时会把用户丢到「播放乐库」，和按钮名字对不上
+  if (!route.query.tab && !playerStore.currentTrack) activeTab.value = 'playlist'
 })
 
 // ===== 数据 =====

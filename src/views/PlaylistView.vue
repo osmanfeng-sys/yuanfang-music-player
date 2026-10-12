@@ -80,16 +80,36 @@ async function removeTrack(trackId: string) {
 function goBack() {
   router.back()
 }
+
+/**
+ * 跳到首页的「正在播放」页签。
+ *
+ * 带 `?tab=playing` 而不是光 push('/')：首页的页签是组件本地状态，
+ * 而它在没有当前曲目时会自动落到「播放乐库」—— 只 push('/') 的话
+ * 没在播歌时就会跳到别的页签，与按钮名字对不上。
+ */
+function goPlaying() {
+  router.push({ path: '/', query: { tab: 'playing' } })
+}
 </script>
 
 <template>
   <main class="playlist-detail">
-    <button class="playlist-detail__back" @click="goBack">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      返回
-    </button>
+    <div class="playlist-detail__nav">
+      <button class="playlist-detail__back" @click="goBack">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        返回歌单
+      </button>
+
+      <button class="playlist-detail__goto" @click="goPlaying">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+        正在播放
+      </button>
+    </div>
 
     <template v-if="!playlist">
       <EmptyState icon="playlist" title="播放列表未找到" description="该列表可能已被删除" />
@@ -188,23 +208,40 @@ function goBack() {
   border-radius: var(--panel-radius);
 }
 
-.playlist-detail__back {
+/* 导航行：「返回歌单」+ 跳「正在播放」 */
+.playlist-detail__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.playlist-detail__back,
+.playlist-detail__goto {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.85rem;
-  margin-bottom: var(--spacing-md);
   padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.playlist-detail__back:hover {
+.playlist-detail__back:hover,
+.playlist-detail__goto:hover {
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+/* 跳转按钮描个边，跟「返回」区分开 */
+.playlist-detail__goto {
+  color: var(--text-primary);
+  border-color: var(--bg-elevated);
 }
 
 .playlist-detail__header {
