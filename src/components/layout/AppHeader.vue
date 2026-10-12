@@ -36,21 +36,25 @@ function toggleTheme() {
       <button
         class="header__theme-btn"
         @click="toggleTheme"
+        :title="userStore.isDark ? '当前深色 · 点击切浅色' : '当前浅色 · 点击切深色'"
         :aria-label="userStore.isDark ? '切换亮色模式' : '切换暗色模式'"
       >
-        <svg v-if="userStore.isDark" width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
-        <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <!-- 半明半暗的对比圆：主题的通用符号，不再是太阳/月亮。
+             原来深色模式下显示太阳（"点我切浅色"），而旁边的设置按钮
+             误画成了太阳，两个并排就撞脸了。
+             保持单一样式不随状态变形，当前模式靠 title 提示。 -->
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+          <path d="M12 3a9 9 0 010 18z" fill="currentColor" />
         </svg>
       </button>
 
-      <router-link to="/settings" class="header__settings-btn" aria-label="设置">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      <router-link to="/settings" class="header__settings-btn" aria-label="设置" title="设置">
+        <!-- 齿轮。原来这里画的是「圆 + 八条放射线」，那是个太阳 ——
+             跟主题按钮撞了，所以两个图标看着一模一样。 -->
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.68 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 3.68 1.65 1.65 0 0010 2.17V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.14.35.44.6.82.7H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
         </svg>
       </router-link>
     </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { usePlayerStore } from '@/stores/player'
 import {
@@ -12,6 +13,13 @@ import type { ThemeMode } from '@/stores/user'
 
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
+const router = useRouter()
+
+/** 关闭设置：能回退就回退，直接打开 /settings 时没有上一条历史，退回首页 */
+function closeSettings() {
+  if (window.history.state?.back) router.back()
+  else router.push('/')
+}
 
 /** 歌单同步：ID + 密码派生出的 key 决定云端歌单归属 */
 const MIN_PASS = 8
@@ -85,7 +93,15 @@ function clearAllData() {
 
 <template>
   <main class="settings">
-    <h1 class="settings__title">设置</h1>
+    <div class="settings__head">
+      <h1 class="settings__title">设置</h1>
+      <button
+        class="settings__close"
+        title="关闭"
+        aria-label="关闭设置"
+        @click="closeSettings"
+      >✕</button>
+    </div>
 
     <section class="settings__section">
       <h2 class="settings__section-title">主题</h2>
@@ -202,10 +218,39 @@ function clearAllData() {
   border-radius: var(--panel-radius);
 }
 
+/* 标题行：标题靠左，关闭按钮靠右 */
+.settings__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-xl);
+}
+
 .settings__title {
   font-size: 1.5rem;
   font-weight: 700;
-  margin-bottom: var(--spacing-xl);
+}
+
+.settings__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.settings__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
 }
 
 .settings__section {
