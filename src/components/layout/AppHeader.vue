@@ -4,8 +4,7 @@ import {
   loadCredentials,
   saveCredentials,
   clearCredentials,
-  deriveUserKey,
-  currentUserId
+  deriveUserKey
 } from '@/utils/userKey'
 
 /**
@@ -119,16 +118,7 @@ function logout() {
       </nav>
     </div>
 
-    <!-- 欢迎语：占据导航与右侧按钮之间的空档，与「首页/歌单/浏览」同一水平线。
-         文字复制一份做无缝循环滚动（动画位移 -50% 正好等于一份的宽度）。 -->
-    <div class="header__spacer">
-      <div v-if="currentUserId" class="header__welcome">
-        <div class="header__welcome-track">
-          <span class="header__welcome-text">欢迎 “{{ currentUserId }}” 聆听</span>
-          <span class="header__welcome-text" aria-hidden="true">欢迎 “{{ currentUserId }}” 聆听</span>
-        </div>
-      </div>
-    </div>
+    <span class="header__spacer" />
 
     <div class="header__right">
       <button
@@ -275,55 +265,9 @@ function logout() {
   color: #fff;
 }
 
-/* 顶栏中部留白：搜索框已移除，核心入口在主页按钮条（对齐参考站）。
-   同时承载欢迎语，所以要做个 flex 容器居中它 */
+/* 顶栏中部留白：搜索框已移除，核心入口在主页按钮条（对齐参考站） */
 .header__spacer {
   flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ===== 欢迎语：胶囊镂空底 + 内部文字循环滚动 =====
-   ⚠️ 这里【刻意不写】@media (prefers-reduced-motion: reduce) { animation: none }。
-      上一版加过，结果 Windows 开了「减少动画」时浏览器直接停掉动画，
-      只剩两份静止的重复文字 —— 看着像坏了。这是用户明确要的动效，就不让系统关掉它。 */
-.header__welcome {
-  /* 固定窄宽 + 圆角 + 半透明底 = 胶囊形"镂空"窗口。
-     宽度必须比一份文字窄，否则文字塞得下就不会滚（短 ID 时尤其明显） */
-  width: 156px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(212, 175, 55, 0.4);
-  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.45);
-}
-
-.header__welcome-track {
-  display: flex;
-  white-space: nowrap;
-  /* 位移 -50% = 一份文字的宽度（含右侧留白），两份首尾相接 → 无缝循环 */
-  animation: header-welcome-scroll 9s linear infinite;
-  will-change: transform;
-}
-
-@keyframes header-welcome-scroll {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-
-.header__welcome-text {
-  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  color: #d4af37; /* 金色，与顶栏 @AI涛哥 同一套视觉 */
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
-  padding: 0 1.5rem 0 1rem; /* 左侧留一点进入余量，右侧留两份之间的间隔 */
 }
 
 .header__right {

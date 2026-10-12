@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
 import { loadLyrics } from '@/services/lyrics'
+import { currentUserId } from '@/utils/userKey'
 import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
@@ -250,6 +251,21 @@ watch(
 
 <template>
   <main class="home">
+    <!-- 欢迎语：整页正中央浮层，未登录（currentUserId 为空）整行不渲染。
+         容器 pointer-events:none —— 浮在内容之上但不抢点击，
+         否则正中间那几行曲目就点不动了。
+         文字复制一份做无缝循环滚动（动画位移 -50% 正好等于一份的宽度）。 -->
+    <div v-if="currentUserId" class="home__welcome">
+      <div class="home__welcome-track">
+        <span class="home__welcome-text">
+          欢迎 <b class="home__welcome-id">{{ currentUserId }}</b> 聆听
+        </span>
+        <span class="home__welcome-text" aria-hidden="true">
+          欢迎 <b class="home__welcome-id">{{ currentUserId }}</b> 聆听
+        </span>
+      </div>
+    </div>
+
     <!-- ===== 左：主区 ===== -->
     <section class="home__main">
       <!-- 顶部按钮条 -->
@@ -739,6 +755,60 @@ watch(
   color: var(--accent);
   cursor: pointer;
   user-select: none;
+}
+
+/* ===== 欢迎语：整页正中央，胶囊镂空底 + 内部文字循环滚动 =====
+   ⚠️ 刻意【不写】@media (prefers-reduced-motion: reduce) { animation: none }。
+      上一版加过，结果 Windows 开了「减少动画」时浏览器直接停掉动画，
+      只剩两份静止的重复文字，看着像坏了。这是用户明确要的动效，不让系统关掉它。 */
+.home__welcome {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* 固定窄宽 + 圆角 + 半透明底 = 胶囊形"镂空"窗口。
+     宽度必须比一份文字窄，否则文字塞得下就不会滚（短 ID 时尤其明显） */
+  width: 168px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.45);
+  /* 浮在内容之上，但不抢点击 */
+  pointer-events: none;
+  z-index: 5;
+}
+
+.home__welcome-track {
+  display: flex;
+  white-space: nowrap;
+  /* 位移 -50% = 一份文字的宽度（含留白），两份首尾相接 → 无缝循环 */
+  animation: home-welcome-scroll 9s linear infinite;
+  will-change: transform;
+}
+
+@keyframes home-welcome-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.home__welcome-text {
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: #d4af37; /* 金色：固定文案 */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  padding: 0 1rem 0 0.75rem; /* 左留进入余量，右留两份之间的间隔 */
+}
+
+/* 账号名单独配色 */
+.home__welcome-id {
+  color: #ff8fc7; /* 粉色 */
+  font-weight: 600;
 }
 
 /* 列头：复用行内类名，保证列头与数据行严格对齐 */
