@@ -61,3 +61,12 @@
   --playerbar-height: 88px;
   --page-gutter: 20px;
 }
+
+/* 移动端底栏改成三行（曲目 / 进度 / 控制），高度必须同步调高 ——
+   .layout__content、侧栏和首页歌词浮层的 bottom 全是按这个变量算的，
+   只改 AppFooter 自己的 height 会让内容区被底栏盖住 */
+@media (max-width: 767px) {
+  :root {
+    --playerbar-height: 120px;
+  }
+}

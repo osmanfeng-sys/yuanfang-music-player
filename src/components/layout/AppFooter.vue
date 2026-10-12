@@ -41,8 +41,8 @@ function onVolumeInput(e: Event) {
   playerStore.setVolume(Number((e.target as HTMLInputElement).value) / 100)
 }
 
-/** 从鼠标事件计算并跳转进度 */
-function seekFromEvent(e: MouseEvent) {
+/** 从指针事件计算并跳转进度 */
+function seekFromEvent(e: { clientX: number }) {
   const bar = barRef.value
   if (!bar) return
   const rect = bar.getBoundingClientRect()
@@ -60,24 +60,37 @@ function seekFromEvent(e: MouseEvent) {
   playerStore.seek(ratio * dur)
 }
 
-function onBarMouseDown(e: MouseEvent) {
-  if (e.button !== 0) return
+/**
+ * ⚠️ 用 Pointer Events 而不是 mouse 事件：触摸屏上手指拖动只会发 pointer/touch 事件，
+ * 不发 mousemove（tap 结束后才补一个 click）。原来那套 mousedown + document.mousemove
+ * 在手机上是「按下去跳一下、拖不动」。
+ * setPointerCapture 之后 move/up 都回投到这个元素，不用再往 document 上挂监听。
+ */
+function onBarPointerDown(e: PointerEvent) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   isDragging.value = true
   isHovering.value = true
   seekFromEvent(e)
-  document.addEventListener('mousemove', onBarMouseMove)
-  document.addEventListener('mouseup', onBarMouseUp)
 }
 
-function onBarMouseMove(e: MouseEvent) {
-  if (!isDragging.value) return
-  seekFromEvent(e)
+function onBarPointerMove(e: PointerEvent) {
+  if (isDragging.value) seekFromEvent(e)
 }
 
-function onBarMouseUp() {
+function onBarPointerUp(e: PointerEvent) {
   isDragging.value = false
-  document.removeEventListener('mousemove', onBarMouseMove)
-  document.removeEventListener('mouseup', onBarMouseUp)
+  const bar = e.currentTarget as HTMLElement
+  if (bar.hasPointerCapture?.(e.pointerId)) bar.releasePointerCapture(e.pointerId)
+}
+
+/** 快进/快退 N 秒，夹在 [0, duration] 之间 */
+function skip(seconds: number) {
+  const audio = playerStore.aplayerInstance?.audio as HTMLAudioElement | undefined
+  if (!audio || !isFinite(audio.currentTime)) return
+  const dur = audio.duration
+  const target = audio.currentTime + seconds
+  playerStore.seek(Math.max(0, isFinite(dur) ? Math.min(target, dur) : target))
 }
 </script>
 
@@ -111,6 +124,14 @@ function onBarMouseUp() {
       </div>
 
       <div class="footer__controls">
+        <button class="footer__btn" @click="skip(-15)" aria-label="后退 15 秒">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+            <text x="12.5" y="15.5" font-size="8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">15</text>
+          </svg>
+        </button>
+
         <button class="footer__btn" @click="playerStore.prev()" aria-label="上一首">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
@@ -130,6 +151,14 @@ function onBarMouseUp() {
         <button class="footer__btn" @click="playerStore.next()" aria-label="下一首">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M16 6h2v12h-2zm-3.5 6l-8.5 6V6z" />
+          </svg>
+        </button>
+
+        <button class="footer__btn" @click="skip(15)" aria-label="快进 15 秒">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            <text x="11.5" y="15.5" font-size="8" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">15</text>
           </svg>
         </button>
 
@@ -172,7 +201,14 @@ function onBarMouseUp() {
         @mouseleave="isHovering = false"
       >
         <span class="footer__time">{{ formatTime(playerStore.currentTime) }}</span>
-        <div class="footer__bar" ref="barRef" @mousedown="onBarMouseDown">
+        <div
+          class="footer__bar"
+          ref="barRef"
+          @pointerdown="onBarPointerDown"
+          @pointermove="onBarPointerMove"
+          @pointerup="onBarPointerUp"
+          @pointercancel="onBarPointerUp"
+        >
           <div class="footer__bar-track">
             <div class="footer__bar-fill" :style="{ width: `${playerStore.progress * 100}%` }" />
             <div
@@ -440,18 +476,53 @@ function onBarMouseUp() {
   font-size: 0.85rem;
 }
 
-/* ===== 移动端：收起进度，保留曲目 / 控制 / 音量 ===== */
+/* ===== 移动端：折成三行（曲目 / 进度 / 控制），进度条改回常显 =====
+   原来这里 .footer__progress { display:none } —— 手机上根本没有进度条，
+   窄屏又只剩曲目信息在抢宽度，才有「控制区占太宽、看不到拖动按钮」的观感 */
 @media (max-width: 767px) {
   .footer {
-    gap: var(--spacing-sm);
-    padding: 0 var(--spacing-md);
+    flex-wrap: wrap;
+    gap: 2px var(--spacing-sm);
+    padding: 6px var(--spacing-md);
   }
-  .footer__progress {
-    display: none;
-  }
+
+  /* 第一行：曲目信息 + 音量 */
   .footer__track-info {
-    flex: 1;
+    order: 1;
+    flex: 1 1 100px;
     width: auto;
+  }
+  .footer__volume {
+    order: 2;
+    flex: 0 0 auto;
+  }
+
+  /* 第二行：进度条整行 */
+  .footer__progress {
+    order: 3;
+    flex: 1 1 100%;
+    gap: var(--spacing-sm);
+  }
+
+  /* 第三行：控制按钮居中 */
+  .footer__controls {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  /* 触摸屏没有 hover，滑块必须常显，否则永远看不到「进度拖动按钮」 */
+  .footer__bar {
+    padding: 10px 0;      /* 加大触控热区 */
+    touch-action: none;   /* 拖动进度时别让浏览器抢去做滚动 */
+  }
+  .footer__bar-track {
+    height: 5px;
+  }
+  .footer__bar-thumb {
+    width: 14px;
+    height: 14px;
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 

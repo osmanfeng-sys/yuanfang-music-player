@@ -31,6 +31,10 @@ const keyword = ref('')
 /** 弹层 */
 const showInfo = ref(false)
 const showBgPanel = ref(false)
+const showRatePanel = ref(false)
+
+/** 移动端歌词面板（≤900px 时右侧面板收成全屏浮层，由这个开关控制） */
+const showMobileLyrics = ref(false)
 
 /** 播客地址 */
 const PODCAST_URL = 'https://yuanfangselect.ccwu.cc/'
@@ -127,8 +131,9 @@ function playFrom(list: Track[], track: Track) {
   setTimeout(() => void prefetchHlsSegments(track.url), 5000)
 }
 
-function onRateChange(e: Event) {
-  playerStore.setPlaybackRate(Number((e.target as HTMLSelectElement).value))
+function setRate(r: number) {
+  playerStore.setPlaybackRate(r)
+  showRatePanel.value = false
 }
 
 function openPodcast() {
@@ -226,7 +231,7 @@ watch(
           class="home__icon-btn"
           :class="{ 'home__icon-btn--on': showBgPanel }"
           title="背景设置"
-          @click="showBgPanel = !showBgPanel"
+          @click="showBgPanel = !showBgPanel; showRatePanel = false"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <circle cx="12" cy="12" r="3" />
@@ -234,14 +239,33 @@ watch(
           </svg>
         </button>
 
-        <select
-          class="home__rate"
-          :value="playerStore.playbackRate"
+        <!-- 歌词面板开关：仅移动端显示（桌面端右侧面板常驻） -->
+        <button
+          class="home__icon-btn home__lyric-btn"
+          :class="{ 'home__icon-btn--on': showMobileLyrics }"
+          title="歌词"
+          @click="showMobileLyrics = !showMobileLyrics"
+        ><span class="home__lyric-glyph">词</span></button>
+
+        <!-- 播放倍速：原生 <select> 的弹出层由系统渲染，手机上会铺满全屏且样式不可控，
+             改成自绘按钮 + 窄列表浮层，宽度与按钮一致、贴着控件下方展开（放在最右，浮层 right 对齐它） -->
+        <button
+          class="home__icon-btn home__rate-btn"
+          :class="{ 'home__icon-btn--on': showRatePanel }"
           title="播放速度"
-          @change="onRateChange"
-        >
-          <option v-for="r in RATES" :key="r" :value="r">{{ r }} x</option>
-        </select>
+          @click="showRatePanel = !showRatePanel; showBgPanel = false"
+        >{{ playerStore.playbackRate }}x</button>
+
+        <!-- 倍速浮层 -->
+        <div v-if="showRatePanel" class="home__rate-panel">
+          <button
+            v-for="r in RATES"
+            :key="r"
+            class="home__bg-option"
+            :class="{ 'home__bg-option--on': playerStore.playbackRate === r }"
+            @click="setRate(r)"
+          >{{ r }} x</button>
+        </div>
 
         <!-- 背景设置浮层 -->
         <div v-if="showBgPanel" class="home__bg-panel">
@@ -366,14 +390,16 @@ watch(
       </div>
     </section>
 
-    <!-- ===== 右：播放面板（歌名 / CD / 歌词） ===== -->
-    <aside class="home__player">
+    <!-- ===== 右：播放面板（歌名 / CD / 歌词） =====
+         桌面端常驻右侧；≤900px 时变成盖住主区的全屏浮层，由顶栏「歌词」按钮开关 -->
+    <aside class="home__player" :class="{ 'home__player--open': showMobileLyrics }">
+      <button class="home__player-close" title="关闭" @click="showMobileLyrics = false">✕</button>
       <p class="home__song-name">{{ playerStore.currentTrack?.title ?? '未在播放' }}</p>
 
       <div class="home__disc-wrap">
         <div class="home__disc" :class="{ 'home__disc--spin': playerStore.isPlaying }">
           <img
-            :src="playerStore.currentTrack?.cover || '/PIC/disc-default.svg'"
+            :src="playerStore.currentTrack?.cover || '/PIC/disc-default.jpg'"
             alt=""
             class="home__disc-img"
           />
@@ -445,6 +471,7 @@ watch(
 
 /* 顶部按钮条 */
 .home__bar {
+  --rate-w: 54px;              /* 倍速按钮与浮层共用的宽度，保证两者严格对齐 */
   position: relative;
   display: flex;
   align-items: center;
@@ -501,21 +528,46 @@ watch(
   background: var(--accent);
 }
 
-.home__rate {
-  height: 26px;
-  margin-left: 4px;
-  padding: 0 6px;
+/* 倍速按钮：宽度固定，浮层照抄这个宽度 */
+.home__rate-btn {
+  width: var(--rate-w);
+  padding: 0;
   font-size: 12px;
-  color: #fff;
-  background: var(--glass-bg-strong);
-  border: none;
-  border-radius: 4px;
-  outline: none;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
-.home__rate option {
-  color: #000;
+/* 歌词开关：仅移动端。用汉字「词」比图标好认 */
+.home__lyric-btn {
+  display: none;
+}
+
+.home__lyric-glyph {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+/* 倍速浮层：贴着倍速按钮下方、同宽的窄列表，不再铺满屏幕 */
+.home__rate-panel {
+  position: absolute;
+  right: 10px;
+  top: 44px;
+  width: var(--rate-w);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: rgba(20, 20, 20, 0.92);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  z-index: 20;
+}
+
+.home__rate-panel .home__bg-option {
+  padding: 5px 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 背景设置浮层 */
@@ -714,6 +766,11 @@ watch(
   overflow: hidden;
 }
 
+/* 移动端浮层的关闭按钮，桌面端不需要 */
+.home__player-close {
+  display: none;
+}
+
 .home__song-name {
   width: 100%;
   font-size: 15px;
@@ -776,6 +833,10 @@ watch(
 
 /* 歌词 */
 .home__lyric {
+  /* ⚠️ 必须定位：跟随滚动用 el.offsetTop 算偏移，而 offsetTop 是相对 offsetParent 的。
+     这里不加 position，offsetParent 就落到外层 .home__player（移动端还是 fixed），
+     offsetTop 会白白多出「歌名+唱片+歌手」那 ~240px，滚出来永远停在当前句下方 8~9 行。 */
+  position: relative;
   flex: 1;
   width: 100%;
   margin-top: var(--spacing-md);
@@ -793,14 +854,21 @@ watch(
 }
 
 .home__lyric-line {
-  padding: 0 6px;
-  transition: color var(--transition-fast);
+  /* 收成贴合文字的宽度再居中：底纹才能只包住这一句，而不是横贯整个面板 */
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 2px 10px;
+  border-radius: 6px;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
+/* 当前播放行：绿色底纹 */
 .home__lyric-line--active {
   color: #fff;
   font-weight: 600;
-  text-shadow: 0 0 12px rgba(255, 94, 94, 0.6);
+  background: rgba(46, 204, 113, 0.28);
+  text-shadow: 0 0 12px rgba(46, 204, 113, 0.55);
 }
 
 .home__lyric-empty {
@@ -855,11 +923,49 @@ watch(
   color: var(--text-faint);
 }
 
-/* ===== 移动端：先收右侧面板，再依次收起专辑列 → 歌手列 ===== */
+/* ===== 移动端：右侧面板改成歌词浮层，再依次收起专辑列 → 歌手列 ===== */
 @media (max-width: 900px) {
+  /* 面板不再是常驻列，而是盖住主区的浮层：几何与 .layout__content 完全一致，
+     顶部导航和底部播放控制都还露着，不用退出去就能暂停/切歌 */
   .home__player {
+    position: fixed;
+    top: calc(var(--topbar-height) + 8px);
+    left: var(--page-gutter);
+    right: var(--page-gutter);
+    bottom: calc(var(--playerbar-height) + 12px);
+    z-index: 50;
+    width: auto;
     display: none;
+    padding: var(--spacing-md);
+    background: rgba(16, 16, 18, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
+
+  .home__player--open {
+    display: flex;
+  }
+
+  .home__player-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    background: var(--glass-bg-strong);
+    cursor: pointer;
+  }
+
+  .home__lyric-btn {
+    display: flex;
+  }
+
   .home__row-album {
     display: none;
   }
@@ -872,8 +978,25 @@ watch(
   .home__row-artist {
     display: none;
   }
+  /* 顶栏要挤下 3 个页签 + 4 个按钮 + 倍速，窄屏收紧间距免得溢出换行 */
+  .home__bar {
+    --rate-w: 48px;
+    gap: 3px;
+    padding: 0 6px;
+  }
   .home__tab {
-    padding: 4px 12px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .home__icon-btn {
+    width: 24px;
+    height: 24px;
+    margin-left: 2px;
+  }
+  /* 必须排在 .home__icon-btn 之后：同优先级，靠源序把 24px 覆盖回浮层宽度 */
+  .home__rate-btn {
+    width: var(--rate-w);
+    font-size: 11px;
   }
 }
 </style>
