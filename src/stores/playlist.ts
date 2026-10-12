@@ -3,6 +3,14 @@ import { ref, computed } from 'vue'
 import { WORKER_BASE_URL } from '@/utils/constants'
 import { normalizeTrack } from '@/services/music'
 import { parseM3u8Duration } from '@/services/prefetch'
+import { loadCredentials } from '@/utils/userKey'
+import { loadJSON, saveJSON } from '@/utils/localStore'
+import {
+  createPlaylist as apiCreatePlaylist,
+  updatePlaylist as apiUpdatePlaylist,
+  deletePlaylist as apiDeletePlaylist,
+  fetchUserPlaylists
+} from '@/services/playlist'
 import type { Track, Artist, Playlist } from '@/types'
 
 export const usePlaylistStore = defineStore('playlist', () => {
@@ -195,12 +203,78 @@ export const usePlaylistStore = defineStore('playlist', () => {
     return undefined
   }
 
-  function createPlaylist(name: string, description?: string): Playlist {
-    const id = `playlist_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  // ===== 用户歌单：本机 / 云端分派 =====
+  //
+  // 没设置「歌单同步」凭据时走 localStorage —— 功能照常可用，只是只在本机。
+  // 设置凭据后走 Worker（按 X-User-Key 隔离）。
+  //
+  // ⚠️ **不做双向同步、不做冲突合并**：有凭据就以云端为准，
+  // 本机那份既不会自动上传，也不会和云端合并。
+
+  /** localStorage 的 key（实际会带 `ym:` 前缀） */
+  const USER_PLAYLISTS_KEY = 'userPlaylists'
+
+  /** 是否已配置云端凭据 */
+  function hasCloud(): boolean {
+    return loadCredentials() !== null
+  }
+
+  /** 把当前用户歌单写回 localStorage */
+  function persistLocal(): void {
+    saveJSON(USER_PLAYLISTS_KEY, userPlaylists.value)
+  }
+
+  /**
+   * 载入用户歌单（云端或本机）。已存在的条目按 id 覆盖。
+   *
+   * 云端模式下**失败必须与「空」区分开**：fetchUserPlaylists 返回 null 表示
+   * 请求失败（含密码打错被 401），此时保持界面上原有的歌单不动 —— 否则
+   * 用户会看到歌单凭空消失，还会以为数据丢了。
+   */
+  async function loadUserPlaylists(): Promise<void> {
+    if (hasCloud()) {
+      const remote = await fetchUserPlaylists()
+      if (remote === null) {
+        error.value = '云端歌单读取失败 —— 检查设置页的 ID / 密码'
+        return
+      }
+      for (const p of remote) {
+        // 补 source：早期写入的对象没有这个字段，而 userPlaylists 是按它过滤的
+        playlists.value[p.id] = { ...p, source: 'user' }
+      }
+      return
+    }
+
+    for (const p of loadJSON<Playlist[]>(USER_PLAYLISTS_KEY, [])) {
+      playlists.value[p.id] = { ...p, source: 'user' }
+    }
+  }
+
+  /** 创建歌单。云端模式先落云端拿到稳定 id，再写本地 state */
+  async function createPlaylist(name: string, description?: string): Promise<Playlist | null> {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+
+    if (hasCloud()) {
+      // CreatePlaylistRequest 的 trackIds 是必填，description 不接受显式 undefined
+      const created = await apiCreatePlaylist({
+        name: trimmed,
+        trackIds: [],
+        ...(description ? { description } : {})
+      })
+      if (!created) {
+        error.value = '云端创建歌单失败'
+        return null
+      }
+      playlists.value[created.id] = { ...created, source: 'user' }
+      return playlists.value[created.id]
+    }
+
     const now = new Date().toISOString()
+    const id = `playlist_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const playlist: Playlist = {
       id,
-      name,
+      name: trimmed,
       description,
       trackIds: [],
       createdAt: now,
@@ -208,34 +282,62 @@ export const usePlaylistStore = defineStore('playlist', () => {
       source: 'user'
     }
     playlists.value[id] = playlist
+    persistLocal()
     return playlist
   }
 
-  function updatePlaylist(id: string, data: Partial<Pick<Playlist, 'name' | 'description' | 'trackIds'>>) {
+  /**
+   * 更新歌单。本地先改让 UI 立刻响应；云端失败只置 error、**不回滚** ——
+   * 回滚会制造中间态，而下次 loadUserPlaylists() 本来就会以云端为准覆盖。
+   */
+  async function updatePlaylist(
+    id: string,
+    data: Partial<Pick<Playlist, 'name' | 'description' | 'trackIds'>>
+  ): Promise<void> {
     const p = playlists.value[id]
     if (!p) return
+
     if (data.name !== undefined) p.name = data.name
     if (data.description !== undefined) p.description = data.description
     if (data.trackIds !== undefined) p.trackIds = data.trackIds
     p.updatedAt = new Date().toISOString()
+
+    if (hasCloud()) {
+      const ok = await apiUpdatePlaylist(id, data)
+      if (!ok) error.value = '云端保存失败'
+    } else {
+      persistLocal()
+    }
   }
 
-  function deletePlaylist(id: string) {
+  async function deletePlaylist(id: string): Promise<void> {
+    const p = playlists.value[id]
+    if (!p) return
     delete playlists.value[id]
+
+    if (hasCloud()) {
+      const ok = await apiDeletePlaylist(id)
+      if (!ok) {
+        // 云端没删掉就加回来 —— 否则刷新后它又出现，看着像删除没生效
+        playlists.value[id] = p
+        error.value = '云端删除失败'
+      }
+    } else {
+      persistLocal()
+    }
   }
 
-  function addToPlaylist(playlistId: string, trackId: string) {
+  /** 加曲目（已在歌单里则忽略） */
+  async function addToPlaylist(playlistId: string, trackId: string): Promise<void> {
     const p = playlists.value[playlistId]
     if (!p || p.trackIds.includes(trackId)) return
-    p.trackIds.push(trackId)
-    p.updatedAt = new Date().toISOString()
+    await updatePlaylist(playlistId, { trackIds: [...p.trackIds, trackId] })
   }
 
-  function removeFromPlaylist(playlistId: string, trackId: string) {
+  async function removeFromPlaylist(playlistId: string, trackId: string): Promise<void> {
     const p = playlists.value[playlistId]
     if (!p) return
-    p.trackIds = p.trackIds.filter((id) => id !== trackId)
-    p.updatedAt = new Date().toISOString()
+    await updatePlaylist(playlistId, { trackIds: p.trackIds.filter((t) => t !== trackId) })
   }
 
   return {
@@ -260,6 +362,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     fetchPlaylists,
     fillDurations,
     fetchTrack,
+    loadUserPlaylists,
     createPlaylist,
     updatePlaylist,
     deletePlaylist,

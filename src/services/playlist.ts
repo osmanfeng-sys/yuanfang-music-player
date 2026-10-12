@@ -10,16 +10,16 @@ export async function createPlaylist(data: CreatePlaylistRequest): Promise<Playl
 }
 
 /**
- * 获取用户播放列表列表
+ * 获取当前用户的全部歌单。
  *
- * 注意：Worker 目前未实现此端点，
- * 在 Phase B 云端存储实施之前返回空数组。
+ * ⚠️ 失败返回 `null`，**不是空数组** —— 这两件事必须分开：
+ * 空数组 = 这个身份下确实没有歌单；null = 请求失败 / 没带凭据被 401。
+ * 混在一起的话，「密码打错」会表现为「歌单凭空消失」，
+ * 调用方还会拿这个空数组去覆盖本地缓存 —— 那是真的丢数据。
  */
-export async function fetchUserPlaylists(): Promise<Playlist[]> {
+export async function fetchUserPlaylists(): Promise<Playlist[] | null> {
   const res = await get<Playlist[]>('/api/playlists')
-  if (!res.success || !res.data) {
-    return []
-  }
+  if (!res.success || !res.data) return null
   return res.data
 }
 

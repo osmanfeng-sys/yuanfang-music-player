@@ -26,6 +26,11 @@ export interface Playlist {
   trackIds: string[]
   createdAt: string
   updatedAt: string
+  /**
+   * 归属。Worker 存的全部是用户歌单，所以写入时固定 'user'。
+   * 可选是为了兼容早期没有这个字段的对象 —— 前端加载时会补上。
+   */
+  source?: 'user'
 }
 
 /** 通用 API 响应 */

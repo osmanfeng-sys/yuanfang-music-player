@@ -7,6 +7,8 @@ const props = defineProps<{
   index: number
   isActive?: boolean
   showRemove?: boolean
+  /** 已在目标歌单里 —— 加号变对勾并禁用（用于详情页的「从曲库添加」结果） */
+  added?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -23,7 +25,7 @@ function onClick() {
 <template>
   <div
     class="playlist-item"
-    :class="{ 'playlist-item--active': isActive }"
+    :class="{ 'playlist-item--active': isActive, 'playlist-item--added': added }"
     @click="onClick"
     role="button"
     tabindex="0"
@@ -39,14 +41,17 @@ function onClick() {
     <div class="playlist-item__actions">
       <button
         class="playlist-item__btn"
+        :class="{ 'playlist-item__btn--added': added }"
+        :disabled="added"
+        :title="added ? '已在歌单中' : '加入歌单'"
+        :aria-label="added ? '已在歌单中' : '加入歌单'"
         @click.stop="emit('add-to-playlist', track.id)"
-        aria-label="添加到播放列表"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <path d="M8 6h13M8 12h13M8 18h9" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          <circle cx="3" cy="6" r="1" fill="currentColor" />
-          <circle cx="3" cy="12" r="1" fill="currentColor" />
-          <circle cx="3" cy="18" r="1" fill="currentColor" />
+        <svg v-if="added" width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
       </button>
       <button
@@ -133,6 +138,18 @@ function onClick() {
 
 .playlist-item:hover .playlist-item__actions {
   opacity: 1;
+}
+
+/* 已加入的条目让对勾常显 —— 触摸屏没有 hover，藏起来就等于没提示 */
+.playlist-item--added .playlist-item__actions {
+  opacity: 1;
+}
+
+.playlist-item__btn--added,
+.playlist-item__btn--added:hover {
+  color: var(--color-primary);
+  background: none;
+  cursor: default;
 }
 
 .playlist-item__btn {

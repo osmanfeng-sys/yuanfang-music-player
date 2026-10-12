@@ -37,8 +37,8 @@ export function usePlaylist() {
     playerStore.addToQueue([track])
   }
 
-  /** 创建新播放列表并返回 */
-  function createNewPlaylist(name: string, description?: string): Playlist {
+  /** 创建新播放列表并返回（createPlaylist 现在要走云端或本机，故为异步） */
+  function createNewPlaylist(name: string, description?: string): Promise<Playlist | null> {
     return playlistStore.createPlaylist(name, description)
   }
 

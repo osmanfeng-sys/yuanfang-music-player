@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
-import { STORAGE_PREFIX, MAX_HISTORY } from '@/utils/constants'
-
-export type ThemeMode = 'light' | 'dark' | 'system'
+import { ref, watch } from 'vue'
+import { MAX_HISTORY } from '@/utils/constants'
+import { loadJSON, saveJSON } from '@/utils/localStore'
 
 /** 主背景模式：默认壁纸 / 当前封面模糊 / 纯黑 */
 export type BgMode = 'wallpaper' | 'cover' | 'black'
@@ -13,27 +12,9 @@ interface SavedSession {
   currentTime: number
 }
 
-function loadJSON<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + key)
-    return raw ? (JSON.parse(raw) as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function saveJSON(key: string, value: unknown) {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value))
-  } catch {
-    // localStorage 满时静默失败
-  }
-}
-
 export const useUserStore = defineStore('user', () => {
   // ===== State（从 localStorage 加载） =====
 
-  const theme = ref<ThemeMode>(loadJSON<ThemeMode>('theme', 'system'))
   const bgMode = ref<BgMode>(loadJSON<BgMode>('bgMode', 'wallpaper'))
   const playHistory = ref<string[]>(loadJSON<string[]>('history', []))
   const favorites = ref<string[]>(loadJSON<string[]>('favorites', []))
@@ -43,7 +24,6 @@ export const useUserStore = defineStore('user', () => {
 
   // ===== 自动持久化 =====
 
-  watch(theme, (v) => saveJSON('theme', v))
   watch(bgMode, (v) => saveJSON('bgMode', v))
   watch(playHistory, (v) => saveJSON('history', v))
   watch(favorites, (v) => saveJSON('favorites', v))
@@ -51,16 +31,6 @@ export const useUserStore = defineStore('user', () => {
   watch(lastSession, (v) => saveJSON('session', v), { deep: true })
 
   // ===== Getters =====
-
-  const isDark = computed(() => {
-    if (theme.value === 'dark') return true
-    if (theme.value === 'light') return false
-    // 'system' — 跟随系统
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches
-    }
-    return false
-  })
 
   /** 最近播放曲目（前 MAX_HISTORY 首） */
   function recentTracks(allTracks: Record<string, { title: string; artist: string }>) {
@@ -78,10 +48,6 @@ export const useUserStore = defineStore('user', () => {
   /** 从 localStorage 初始化（后续可扩展为更复杂的初始化） */
   function init() {
     initialized.value = true
-  }
-
-  function setTheme(mode: ThemeMode) {
-    theme.value = mode
   }
 
   function setBgMode(mode: BgMode) {
@@ -121,7 +87,6 @@ export const useUserStore = defineStore('user', () => {
 
   return {
     // State
-    theme,
     bgMode,
     playHistory,
     favorites,
@@ -129,12 +94,10 @@ export const useUserStore = defineStore('user', () => {
     lastSession,
     initialized,
     // Getters
-    isDark,
     recentTracks,
     isFavorite,
     // Actions
     init,
-    setTheme,
     setBgMode,
     addToHistory,
     toggleFavorite,

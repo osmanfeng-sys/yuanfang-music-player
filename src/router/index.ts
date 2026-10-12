@@ -28,6 +28,12 @@ const routes = [
     props: (route: { query: { q?: string } }) => ({ query: route.query.q || '' })
   },
   {
+    path: '/playlists',
+    name: 'playlists',
+    component: () => import('@/views/PlaylistsView.vue'),
+    meta: { title: '我的歌单' }
+  },
+  {
     path: '/playlist/:id',
     name: 'playlist',
     component: () => import('@/views/PlaylistView.vue'),

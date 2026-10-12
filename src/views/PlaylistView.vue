@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
@@ -20,6 +20,32 @@ const tracks = computed<Track[]>(() =>
   playlist.value ? getTracksFromPlaylist(playlist.value) : []
 )
 
+// ===== 从曲库添加 =====
+
+const showAdd = ref(false)
+const keyword = ref('')
+
+/** 复用 store 已有的全文搜索；截断到 50 条免得一次渲染太重 */
+const searchResults = computed<Track[]>(() => {
+  const q = keyword.value.trim()
+  return q ? playlistStore.searchTracks(q).slice(0, 50) : []
+})
+
+function isInPlaylist(trackId: string) {
+  return playlist.value?.trackIds.includes(trackId) ?? false
+}
+
+async function addTrack(trackId: string) {
+  if (!playlist.value || isInPlaylist(trackId)) return
+  await playlistStore.addToPlaylist(playlist.value.id, trackId)
+}
+
+onMounted(async () => {
+  // 直接粘 /playlist/xxx 进来时曲库还没加载过，那样搜索永远搜不到东西
+  if (playlistStore.allTracks.length === 0) await playlistStore.fetchPlaylists()
+  await playlistStore.loadUserPlaylists()
+})
+
 function playTrack(trackId: string) {
   if (!playlist.value) return
   const index = playlist.value.trackIds.indexOf(trackId)
@@ -28,9 +54,9 @@ function playTrack(trackId: string) {
   }
 }
 
-function removeTrack(trackId: string) {
+async function removeTrack(trackId: string) {
   if (!playlist.value) return
-  playlistStore.removeFromPlaylist(playlist.value.id, trackId)
+  await playlistStore.removeFromPlaylist(playlist.value.id, trackId)
 }
 
 function goBack() {
@@ -68,16 +94,45 @@ function goBack() {
             {{ tracks.length }} 首歌曲
             <span v-if="playlist.description">· {{ playlist.description }}</span>
           </p>
-          <button
-            v-if="tracks.length > 0"
-            class="playlist-detail__play-all"
-            @click="playPlaylist(playlist, 0)"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-            播放全部
-          </button>
+          <div class="playlist-detail__actions">
+            <button
+              v-if="tracks.length > 0"
+              class="playlist-detail__play-all"
+              @click="playPlaylist(playlist, 0)"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              播放全部
+            </button>
+            <button class="playlist-detail__add-toggle" @click="showAdd = !showAdd">
+              {{ showAdd ? '收起' : '＋ 从曲库添加' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 从曲库添加：搜索框 + 结果，点结果（或行尾的 ＋）即加入本歌单 -->
+      <div v-if="showAdd" class="playlist-detail__add-panel">
+        <input
+          v-model="keyword"
+          class="playlist-detail__search"
+          type="search"
+          placeholder="搜索歌名 / 歌手，点结果即加入本歌单"
+        />
+        <p v-if="keyword.trim() && searchResults.length === 0" class="playlist-detail__add-empty">
+          没有匹配的曲目
+        </p>
+        <div v-else class="playlist-detail__add-results">
+          <PlaylistItem
+            v-for="(t, i) in searchResults"
+            :key="t.id"
+            :track="t"
+            :index="i"
+            :added="isInPlaylist(t.id)"
+            @click="addTrack(t.id)"
+            @add-to-playlist="addTrack($event)"
+          />
         </div>
       </div>
 
@@ -174,11 +229,18 @@ function goBack() {
   color: var(--text-secondary);
 }
 
+.playlist-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-sm);
+}
+
 .playlist-detail__play-all {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-lg);
   background: var(--color-primary);
   color: #fff;
@@ -192,6 +254,57 @@ function goBack() {
 
 .playlist-detail__play-all:hover {
   background: var(--color-primary-hover);
+}
+
+.playlist-detail__add-toggle {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--bg-elevated);
+  border-radius: var(--radius-full);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.playlist-detail__add-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+/* ===== 从曲库添加 ===== */
+.playlist-detail__add-panel {
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.playlist-detail__search {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  outline: none;
+}
+
+.playlist-detail__search:focus {
+  border-color: var(--color-primary);
+}
+
+.playlist-detail__add-empty {
+  padding: var(--spacing-md) 0;
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+}
+
+.playlist-detail__add-results {
+  margin-top: var(--spacing-sm);
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .playlist-detail__tracks {

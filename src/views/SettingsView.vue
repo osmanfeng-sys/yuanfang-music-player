@@ -9,7 +9,6 @@ import {
   clearCredentials,
   deriveUserKey
 } from '@/utils/userKey'
-import type { ThemeMode } from '@/stores/user'
 
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
@@ -69,16 +68,6 @@ function clearSync() {
   syncError.value = ''
 }
 
-const themes: { value: ThemeMode; label: string }[] = [
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '浅色' },
-  { value: 'system', label: '跟随系统' }
-]
-
-function setTheme(mode: ThemeMode) {
-  userStore.setTheme(mode)
-}
-
 function clearHistory() {
   userStore.clearHistory()
 }
@@ -102,21 +91,6 @@ function clearAllData() {
         @click="closeSettings"
       >✕</button>
     </div>
-
-    <section class="settings__section">
-      <h2 class="settings__section-title">主题</h2>
-      <div class="settings__theme-options">
-        <button
-          v-for="t in themes"
-          :key="t.value"
-          class="settings__theme-btn"
-          :class="{ 'settings__theme-btn--active': userStore.theme === t.value }"
-          @click="setTheme(t.value)"
-        >
-          {{ t.label }}
-        </button>
-      </div>
-    </section>
 
     <section class="settings__section">
       <h2 class="settings__section-title">播放</h2>
@@ -271,33 +245,6 @@ function clearAllData() {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: var(--spacing-md);
-}
-
-.settings__theme-options {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.settings__theme-btn {
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--bg-tertiary);
-  border: 2px solid transparent;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all var(--transition-fast);
-}
-
-.settings__theme-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-elevated);
-}
-
-.settings__theme-btn--active {
-  border-color: var(--color-primary);
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
 }
 
 /* ===== 歌单同步 ===== */

@@ -109,7 +109,10 @@ export async function handleCreatePlaylist(request: Request, env: Env): Promise<
       description: body.description,
       trackIds: body.trackIds ?? [],
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      // 前端 store 的 userPlaylists 是按 source === 'user' 过滤的；
+      // 不下发这个字段的话，从云端取回的歌单会整个不进列表
+      source: 'user'
     }
 
     const playlists = await getAllPlaylists(env, uid)
