@@ -21,9 +21,13 @@ function onSelect(id: string) {
   router.push(`/playlist/${id}`)
 }
 
-async function onCreate() {
-  const name = window.prompt('歌单名称')
-  if (!name?.trim()) return
+/** 关闭：能回退就回退，直接打开 /playlists 时没有上一条历史，退回首页 */
+function closeView() {
+  if (window.history.state?.back) router.back()
+  else router.push('/')
+}
+
+async function onCreate(name: string) {
   const created = await playlistStore.createPlaylist(name)
   if (created) router.push(`/playlist/${created.id}`)
 }
@@ -42,13 +46,18 @@ async function onRename(id: string, name: string) {
 
 <template>
   <main class="playlists">
-    <!-- 状态行：不重复渲染标题，标题和「新建」由 MyPlaylists 自己提供 -->
-    <p class="playlists__status" :class="{ 'playlists__status--cloud': cloudOn }">
-      {{ cloudOn ? '云端同步已开启' : '歌单只存在本机' }}
-      <router-link to="/settings" class="playlists__status-link">
-        {{ cloudOn ? '更改' : '去设置开启同步' }}
-      </router-link>
-    </p>
+    <!-- 状态行 + 关闭按钮。标题和「新建」由 MyPlaylists 自己提供，这里不重复渲染 -->
+    <div class="playlists__bar">
+      <p class="playlists__status" :class="{ 'playlists__status--cloud': cloudOn }">
+        {{ cloudOn ? '云端同步已开启' : '歌单只存在本机' }}
+        <router-link to="/settings" class="playlists__status-link">
+          {{ cloudOn ? '更改' : '去设置开启同步' }}
+        </router-link>
+      </p>
+      <button class="playlists__close" title="关闭" aria-label="关闭" @click="closeView">
+        ✕
+      </button>
+    </div>
 
     <p v-if="playlistStore.error" class="playlists__error">{{ playlistStore.error }}</p>
 
@@ -76,13 +85,42 @@ async function onRename(id: string, name: string) {
   border-radius: var(--panel-radius);
 }
 
+.playlists__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg) var(--spacing-sm);
+}
+
 .playlists__status {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-lg) var(--spacing-sm);
   font-size: 0.8rem;
   color: var(--text-tertiary);
+}
+
+.playlists__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.playlists__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
 }
 
 .playlists__status--cloud {

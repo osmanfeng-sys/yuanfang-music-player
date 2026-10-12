@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import type { Playlist } from '@/types'
 import { formatRelativeTime } from '@/utils/format'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -10,7 +10,8 @@ defineProps<{
 
 const emit = defineEmits<{
   select: [playlistId: string]
-  create: []
+  /** 带上名字 —— 命名在本组件内完成，调用方不用再弹输入框 */
+  create: [name: string]
   delete: [playlistId: string]
   rename: [playlistId: string, name: string]
 }>()
@@ -29,13 +30,42 @@ function confirmRename() {
   }
   editingId.value = null
 }
+
+/**
+ * 新建走行内输入，不用 window.prompt()。
+ *
+ * prompt 会被浏览器拦截或静音（Chrome 的「阻止此页面创建更多对话框」、
+ * 各种内嵌/无痕环境），返回 null 后代码直接 return —— 表现就是
+ * 「点新建毫无反应」。而且阻塞式弹窗在移动端体验也差。
+ */
+const creating = ref(false)
+const newName = ref('')
+const newNameInput = ref<HTMLInputElement>()
+
+function startCreate() {
+  creating.value = true
+  newName.value = ''
+  nextTick(() => newNameInput.value?.focus())
+}
+
+function confirmCreate() {
+  const name = newName.value.trim()
+  creating.value = false
+  newName.value = ''
+  if (name) emit('create', name)
+}
+
+function cancelCreate() {
+  creating.value = false
+  newName.value = ''
+}
 </script>
 
 <template>
   <div class="my-playlists">
     <div class="my-playlists__header">
       <h3 class="my-playlists__title">我的歌单</h3>
-      <button class="my-playlists__create" @click="emit('create')" aria-label="创建播放列表">
+      <button class="my-playlists__create" @click="startCreate" aria-label="创建歌单">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
           <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
@@ -44,13 +74,34 @@ function confirmRename() {
     </div>
 
     <EmptyState
-      v-if="playlists.length === 0"
+      v-if="playlists.length === 0 && !creating"
       icon="playlist"
       title="暂无歌单"
-      description="创建你的第一个歌单"
+      description="点右上角「新建」创建你的第一个歌单"
     />
 
     <ul v-else class="my-playlists__list">
+      <!-- 新建行：行内输入，回车创建 / Esc 取消 / 失焦视同确认 -->
+      <li v-if="creating" class="my-playlist-item my-playlist-item--new">
+        <div class="my-playlist-item__cover">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="4" fill="var(--bg-tertiary)" />
+            <path d="M12 8v8M8 12h8" stroke="var(--color-primary)" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div class="my-playlist-item__info">
+          <input
+            ref="newNameInput"
+            v-model="newName"
+            class="my-playlist-item__edit"
+            placeholder="歌单名称，回车创建"
+            @keydown.enter="confirmCreate"
+            @keydown.esc="cancelCreate"
+            @blur="confirmCreate"
+          />
+        </div>
+      </li>
+
       <li
         v-for="p in playlists"
         :key="p.id"

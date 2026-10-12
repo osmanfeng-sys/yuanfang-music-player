@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   loadCredentials,
   saveCredentials,
@@ -23,12 +23,39 @@ const accountError = ref('')
 
 const loggedIn = computed(() => fingerprint.value !== '')
 
+const accountBtn = ref<HTMLElement>()
+
+/**
+ * 点空白处 / 按 Esc 关闭浮层。
+ *
+ * 面板自身挂了 @click.stop，所以冒泡到这里的一定是「面板和按钮之外」的点击；
+ * 但按钮必须显式排除 —— 它自己的 click 也会冒泡上来，不排除的话
+ * 刚点开就被这一句关掉，表现成「按钮没反应」。
+ */
+function onDocumentClick(e: MouseEvent) {
+  if (!showAccount.value) return
+  if (accountBtn.value?.contains(e.target as Node)) return
+  showAccount.value = false
+}
+
+function onDocumentKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') showAccount.value = false
+}
+
 onMounted(async () => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+
   const c = loadCredentials()
   if (!c) return
   accountId.value = c.id
   accountPass.value = c.pass
   fingerprint.value = await deriveUserKey(c.id, c.pass).catch(() => '')
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
 })
 
 async function submitAccount() {
@@ -95,6 +122,7 @@ function logout() {
 
     <div class="header__right">
       <button
+        ref="accountBtn"
         class="header__account-btn"
         :class="{ 'header__account-btn--on': loggedIn }"
         :title="loggedIn ? `已登录：${accountId}` : '登录 / 创建 ID'"
@@ -116,8 +144,9 @@ function logout() {
         </svg>
       </router-link>
 
-      <!-- 账号浮层：未登录 = 创建 / 登录；已登录 = 身份 + 退出 -->
-      <div v-if="showAccount" class="header__account-panel">
+      <!-- 账号浮层：未登录 = 创建 / 登录；已登录 = 身份 + 退出。
+           点面板内部不关闭（@click.stop），点别处或按 Esc 关闭 -->
+      <div v-if="showAccount" class="header__account-panel" @click.stop>
         <template v-if="loggedIn">
           <p class="header__account-title">已登录</p>
           <p class="header__account-id">{{ accountId }}</p>
