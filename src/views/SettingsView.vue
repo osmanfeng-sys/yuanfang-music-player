@@ -1,10 +1,65 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { usePlayerStore } from '@/stores/player'
+import {
+  loadCredentials,
+  saveCredentials,
+  clearCredentials,
+  deriveUserKey
+} from '@/utils/userKey'
 import type { ThemeMode } from '@/stores/user'
 
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
+
+/** 歌单同步：ID + 密码派生出的 key 决定云端歌单归属 */
+const MIN_PASS = 8
+const syncId = ref('')
+const syncPass = ref('')
+/** 已生效凭据的短指纹 —— 用来在两台设备上核对是不是同一个身份 */
+const fingerprint = ref('')
+const syncError = ref('')
+
+onMounted(async () => {
+  const c = loadCredentials()
+  if (!c) return
+  syncId.value = c.id
+  syncPass.value = c.pass
+  fingerprint.value = await deriveUserKey(c.id, c.pass).catch(() => '')
+})
+
+async function saveSync() {
+  const id = syncId.value.trim()
+  const pass = syncPass.value
+  syncError.value = ''
+
+  if (!id) {
+    syncError.value = '请填写用户 ID'
+    return
+  }
+  if (pass.length < MIN_PASS) {
+    syncError.value = `密码至少 ${MIN_PASS} 位`
+    return
+  }
+
+  try {
+    fingerprint.value = await deriveUserKey(id, pass)
+  } catch {
+    syncError.value = '当前环境不支持加密，请用 HTTPS 或 localhost 打开'
+    return
+  }
+  saveCredentials(id, pass)
+}
+
+function clearSync() {
+  if (!confirm('清除歌单同步凭据？云端歌单不会被删除，只是本机不再读取它。')) return
+  clearCredentials()
+  syncId.value = ''
+  syncPass.value = ''
+  fingerprint.value = ''
+  syncError.value = ''
+}
 
 const themes: { value: ThemeMode; label: string }[] = [
   { value: 'dark', label: '深色' },
@@ -62,6 +117,48 @@ function clearAllData() {
         />
         <span class="settings__vol-value">{{ Math.round(playerStore.volume * 100) }}%</span>
       </div>
+    </section>
+
+    <section class="settings__section">
+      <h2 class="settings__section-title">歌单同步</h2>
+      <p class="settings__hint">
+        设一组「用户 ID + 密码」，歌单就会存到云端并归属这个身份；换设备输入同样的
+        ID 和密码即可取回。<br />
+        这是自定义口令，不是账号 —— <b>别用你在其它网站的密码</b>。
+      </p>
+
+      <label class="settings__field">
+        <span>用户 ID</span>
+        <input v-model="syncId" class="settings__input" placeholder="随便起，例如 osman" />
+      </label>
+
+      <label class="settings__field">
+        <span>密码</span>
+        <input
+          v-model="syncPass"
+          type="password"
+          class="settings__input"
+          :placeholder="`至少 ${MIN_PASS} 位`"
+        />
+      </label>
+
+      <div class="settings__row">
+        <span class="settings__state">
+          {{ fingerprint ? `已开启 · 指纹 ${fingerprint.slice(0, 8)}` : '未设置（歌单只存本机）' }}
+        </span>
+        <span class="settings__actions">
+          <button class="settings__btn" @click="saveSync">保存</button>
+          <button
+            class="settings__btn settings__btn--danger"
+            :disabled="!fingerprint"
+            @click="clearSync"
+          >
+            清除
+          </button>
+        </span>
+      </div>
+
+      <p v-if="syncError" class="settings__error">{{ syncError }}</p>
     </section>
 
     <section class="settings__section">
@@ -156,6 +253,62 @@ function clearAllData() {
   border-color: var(--color-primary);
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+/* ===== 歌单同步 ===== */
+.settings__hint {
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+  margin-bottom: var(--spacing-md);
+}
+
+.settings__field {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) 0;
+  font-size: 0.9rem;
+}
+
+.settings__field > span {
+  width: 72px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.settings__input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.settings__input:focus {
+  border-color: var(--color-primary);
+}
+
+.settings__state {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.settings__error {
+  margin-top: var(--spacing-sm);
+  font-size: 0.8rem;
+  color: #e74c3c;
 }
 
 .settings__row {

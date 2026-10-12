@@ -1,4 +1,5 @@
 import { WORKER_BASE_URL } from '@/utils/constants'
+import { currentUserKey } from '@/utils/userKey'
 import type { ApiResponse } from '@/types'
 
 /**
@@ -14,11 +15,17 @@ async function request<T>(
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000)
 
+    // 用户 key 只在设置过「歌单同步」凭据后才有；没设置就不带这个头，
+    // 服务端会回 401（歌单功能当前无入口，不影响其余接口）。
+    // 在这里统一注入，省得每个调用点各自拼 header。
+    const userKey = await currentUserKey()
+
     const res = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        ...(userKey ? { 'X-User-Key': userKey } : {}),
         ...options?.headers
       }
     })

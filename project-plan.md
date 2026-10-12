@@ -1,1668 +1,301 @@
-# yuanfang-music-player 全面重构实施计划
+# yuanfang-music-player 架构与规划
 
-## Context
-
-将当前 **单文件 Vanilla JS** 的在线音乐播放器完全重构为 **Vue 3 + TypeScript + Vite** 架构的现代化音乐平台。保持 Cloudflare Pages + Worker + R2 的部署架构，保留 APlayer 播放器。
-
-**当前问题：** 所有前端代码在一个 `index.html` 中（400+ 行混合 HTML/CSS/JS），无组件化、无类型检查、无状态管理、无模块化、无测试、硬编码密钥、CI/CD 不一致。
-
-**目标结果：** 一个可扩展、可维护、支持多艺人浏览、用户自定义播放列表、搜索、歌词显示的现代化音乐平台。
-
----
-
-## Phase 1: 项目脚手架搭建
-
-### 1.1 初始化 Vite + Vue 3 + TypeScript 项目
-
-在 `yuanfang-music-player/` 目录下创建 Vue 3 项目结构（保留现有文件不动，新代码放在 `src/` 子目录）。
-
-**执行命令：**
-```bash
-cd yuanfang-music-player
-npm create vite@latest . -- --template vue-ts
-# 选择覆盖时，手动保留现有 index.html, worker.js, wrangler.toml 等
-```
-
-### 1.2 安装依赖
-
-```bash
-# 核心
-npm install vue-router@4 pinia
-
-# APlayer (npm 包而非 CDN)
-npm install aplayer
-
-# hls.js
-npm install hls.js
-
-# 工具库
-npm install @vueuse/core   # 常用 composition utilities
-
-# 开发依赖
-npm install -D @types/aplayer
-npm install -D eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
-npm install -D prettier eslint-plugin-vue
-npm install -D vitest @vue/test-utils happy-dom
-npm install -D sass  # 如需 SCSS
-```
-
-### 1.3 目录结构规划
-
-```
-yuanfang-music-player/
-├── index.html                    # Vite 入口 HTML（替换现在的）
-├── src/
-│   ├── main.ts                   # 应用入口
-│   ├── App.vue                   # 根组件
-│   ├── router/
-│   │   └── index.ts              # Vue Router 路由配置
-│   ├── stores/
-│   │   ├── player.ts             # 播放器状态 (Pinia)
-│   │   ├── playlist.ts           # 播放列表状态
-│   │   ├── user.ts               # 用户偏好 & 自定义列表
-│   │   └── search.ts             # 搜索状态
-│   ├── components/
-│   │   ├── player/
-│   │   │   ├── MusicPlayer.vue       # APlayer 封装组件
-│   │   │   ├── PlayerControls.vue    # 播放控制条（自定义 UI 层）
-│   │   │   └── LyricsPanel.vue       # 歌词面板
-│   │   ├── playlist/
-│   │   │   ├── PlaylistPanel.vue     # 播放列表面板
-│   │   │   ├── PlaylistItem.vue      # 列表项
-│   │   │   └── MyPlaylists.vue       # 用户自定义播放列表
-│   │   ├── search/
-│   │   │   ├── SearchBar.vue         # 搜索栏
-│   │   │   └── SearchResults.vue     # 搜索结果
-│   │   ├── artist/
-│   │   │   ├── ArtistList.vue        # 艺人列表
-│   │   │   └── ArtistCard.vue        # 艺人卡片
-│   │   ├── layout/
-│   │   │   ├── AppHeader.vue         # 顶部导航
-│   │   │   ├── AppSidebar.vue        # 侧边栏（桌面端）
-│   │   │   ├── AppFooter.vue         # 底部播放条
-│   │   │   └── AppLayout.vue         # 整体布局容器
-│   │   └── common/
-│   │       ├── LoadingSpinner.vue    # 加载动画
-│   │       ├── ErrorMessage.vue      # 错误提示
-│   │       └── EmptyState.vue        # 空状态
-│   ├── views/
-│   │   ├── HomeView.vue          # 首页：推荐/最近播放
-│   │   ├── BrowseView.vue        # 浏览：按艺人/专辑
-│   │   ├── ArtistView.vue        # 艺人详情页
-│   │   ├── PlaylistView.vue      # 播放列表详情页
-│   │   ├── SearchView.vue        # 搜索结果页
-│   │   └── SettingsView.vue      # 设置页
-│   ├── services/
-│   │   ├── api.ts                # API 基础封装 (fetch + 错误处理)
-│   │   ├── music.ts              # 音乐相关 API
-│   │   └── playlist.ts           # 播放列表 API
-│   ├── types/
-│   │   ├── music.ts              # 音乐相关类型定义
-│   │   ├── playlist.ts           # 播放列表类型
-│   │   └── api.ts                # API 响应类型
-│   ├── utils/
-│   │   ├── storage.ts            # localStorage 封装
-│   │   ├── format.ts             # 格式化工具（时间、文件大小等）
-│   │   └── constants.ts          # 常量定义
-│   ├── assets/
-│   │   ├── styles/
-│   │   │   ├── variables.css     # CSS 变量（主题色、间距等）
-│   │   │   ├── global.css        # 全局样式
-│   │   │   └── aplayer-theme.css # APlayer 主题覆盖
-│   │   └── images/               # 静态图片
-│   └── composables/
-│       ├── useAudioPlayer.ts     # 音频播放逻辑封装
-│       ├── usePlaylist.ts        # 播放列表操作
-│       └── useLocalStorage.ts    # localStorage 响应式封装
-├── public/
-│   └── favicon.svg
-├── worker/
-│   ├── index.ts                  # Worker 入口（TS 重构版）
-│   └── routes.ts                 # 路由处理函数
-├── scripts/
-│   └── list-r2.ts                # R2 扫描脚本（TS 重写，从环境变量读凭证）
-├── vite.config.ts                # Vite 配置
-├── tsconfig.json                 # TypeScript 配置
-├── tsconfig.node.json            # Node 端 TS 配置
-├── wrangler.toml                 # 保留现有，微调
-├── package.json                  # 更新
-├── .env.example                  # 环境变量模板
-├── .eslintrc.cjs                 # ESLint 配置
-├── .prettierrc                   # Prettier 配置
-└── README.md                     # 更新文档
-```
+> **最后更新：2026-10-12**
+>
+> 本文原名「全面重构实施计划」（2026-07-21，1668 行，Phase 1–23）。
+> 那次重构**已经完成** —— Phase 1–18 的产物就是今天的代码，逐日排期、组件 Props/Emits 清单、
+> 完整的类型与 store 代码片段都已随代码本身过时，本次一并删除。
+>
+> 现在它回答三个问题：**架构长什么样**、**当初为什么这么定**、**还有什么没做**。
+>
+> ```
+> project-plan.md    全项目架构与剩余方向（本文）
+> homepage-plan.md   主页（HomeView.vue）单视图现状与待办
+> memory.md          运维记忆 —— 踩坑 / 部署流程 / 网络依赖（项目根，已 gitignore）
+> ```
+> **与代码冲突时以代码为准，并回头修文档。**
 
 ---
 
-## Phase 2: 类型系统 & 数据模型
+## 一、现状速览
 
-### 2.1 `src/types/music.ts`
+| 项 | 值 |
+|---|---|
+| 前端 | Vue 3.4 + TypeScript 5.3 + Vite 5 + Pinia 2 + vue-router 4 |
+| 播放内核 | APlayer 1.10（npm 包）+ hls.js 1.5 |
+| 前端托管 | Cloudflare Pages，项目名 `yuanfang-music` |
+| API | Cloudflare Worker，名 `music-proxy`，独立 TS 子项目（esbuild → `worker/dist/worker.js`） |
+| 存储 | Cloudflare R2，bucket `music-bucket`，绑定名 `MUSIC` |
+| 音频 | **393 首 mp3**（直传，非 HLS）；R2 无封面文件 |
+| 歌词 | `lyrics/<trackId>.json`（271 个），另有索引 `playlist.json` + `durations.json` |
+| CI/CD | GitHub Actions，push 到 main 即自动部署（`.github/workflows/deploy.yml`） |
+| 仓库 | 公开：`osmanfeng-sys/yuanfang-music-player` |
 
-```typescript
-// ========== 音乐文件相关 ==========
+**域名**
 
-/** HLS 音轨 */
-export interface Track {
-  /** 唯一标识，格式: "artist_album_trackname" 的 hash 或 slug */
-  id: string
-  /** 歌曲名，如 "Barbie Girl" */
-  title: string
-  /** 艺人名，如 "Aqua" */
-  artist: string
-  /** 专辑名（可选，从路径推断） */
-  album?: string
-  /** R2 中 playlist.m3u8 的完整 Worker URL */
-  url: string
-  /** 封面图 URL（可选） */
-  cover?: string
-  /** 歌词文件 URL（可选） */
-  lyricsUrl?: string
-  /** 时长（秒），初始未知，播放后获取 */
-  duration?: number
-  /** 媒体类型 */
-  type: 'hls'
-}
-
-/** 艺人 */
-export interface Artist {
-  /** 唯一标识 */
-  id: string
-  /** 艺人名 */
-  name: string
-  /** 艺人名（中文/日文/其他语言） */
-  nameLocalized?: string
-  /** 封面图 */
-  cover?: string
-  /** 该艺人的歌曲数量 */
-  trackCount: number
-  /** 该艺人的专辑列表 */
-  albums: Album[]
-}
-
-/** 专辑 */
-export interface Album {
-  /** 唯一标识 */
-  id: string
-  /** 专辑名 */
-  name: string
-  /** 所属艺人 ID */
-  artistId: string
-  /** 封面图 */
-  cover?: string
-  /** 发行年份 */
-  year?: number
-  /** 曲目列表 */
-  tracks: Track[]
-}
+```
+前端    https://yuanfangorganics.ccwu.cc        Pages 自定义域
+API     https://api.yuanfangorganics.ccwu.cc    Worker 自定义域
+API 回退 https://music-proxy.osmanfeng.workers.dev （需代理）
+播客    https://yuanfangselect.ccwu.cc/         主页顶部「播客」按钮
 ```
 
-### 2.2 `src/types/playlist.ts`
-
-```typescript
-/** 播放列表 */
-export interface Playlist {
-  /** UUID */
-  id: string
-  /** 播放列表名称 */
-  name: string
-  /** 描述 */
-  description?: string
-  /** 封面（第一首歌的封面或自定义） */
-  cover?: string
-  /** 曲目 ID 列表（有序） */
-  trackIds: string[]
-  /** 创建时间 (ISO 8601) */
-  createdAt: string
-  /** 更新时间 (ISO 8601) */
-  updatedAt: string
-  /** 来源: 系统内置 / 用户创建 / 收藏 */
-  source: 'system' | 'user' | 'favorite'
-}
-
-/** 播放模式 */
-export type PlayMode = 'sequential' | 'shuffle' | 'single-repeat' | 'list-repeat'
-```
-
-### 2.3 `src/types/api.ts`
-
-```typescript
-/** Worker API 通用响应 */
-export interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: string
-}
-
-/** GET /list 响应 */
-export type PlaylistResponse = Track[]
-
-/** GET /api/artists 响应 */
-export interface ArtistsResponse {
-  artists: Artist[]
-}
-
-/** GET /api/artist/:id 响应 */
-export interface ArtistDetailResponse {
-  artist: Artist
-  tracks: Track[]
-}
-
-/** POST /api/playlists 请求体 */
-export interface CreatePlaylistRequest {
-  name: string
-  description?: string
-  trackIds: string[]
-}
-
-/** PUT /api/playlists/:id 请求体 */
-export interface UpdatePlaylistRequest {
-  name?: string
-  description?: string
-  trackIds?: string[]
-}
-```
+> ⚠️ 这三个 `*.ccwu.cc` 域名的 SNI 在国内被点名阻断，**开着 Clash 时需要 WARP 出站才能访问**
+> —— 配置在 Clash Verge 的 `Script.js`，全套机制见全局记忆 `network-notes.md`。
 
 ---
 
-## Phase 3: 路由设计
+## 二、架构
 
-### 3.1 `src/router/index.ts`
-
-```typescript
-import { createRouter, createWebHistory } from 'vue-router'
-
-const routes = [
-  {
-    path: '/',
-    name: 'home',
-    component: () => import('@/views/HomeView.vue'),
-    meta: { title: '远方音乐 - 首页' }
-  },
-  {
-    path: '/browse',
-    name: 'browse',
-    component: () => import('@/views/BrowseView.vue'),
-    meta: { title: '浏览音乐' }
-  },
-  {
-    path: '/artist/:id',
-    name: 'artist',
-    component: () => import('@/views/ArtistView.vue'),
-    meta: { title: '艺人详情' },
-    props: true
-  },
-  {
-    path: '/search',
-    name: 'search',
-    component: () => import('@/views/SearchView.vue'),
-    meta: { title: '搜索' },
-    props: (route) => ({ query: route.query.q || '' })
-  },
-  {
-    path: '/playlist/:id',
-    name: 'playlist',
-    component: () => import('@/views/PlaylistView.vue'),
-    meta: { title: '播放列表' },
-    props: true
-  },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('@/views/SettingsView.vue'),
-    meta: { title: '设置' }
-  },
-  {
-    path: '/:pathMatch(.*)*',
-    name: 'not-found',
-    component: () => import('@/views/NotFoundView.vue'),
-    meta: { title: '404' }
-  }
-]
-
-const router = createRouter({
-  history: createWebHistory(),
-  routes,
-  scrollBehavior() {
-    return { top: 0 }
-  }
-})
-
-// 动态 title
-router.afterEach((to) => {
-  document.title = (to.meta.title as string) || '远方音乐'
-})
-
-export default router
-```
-
-| 路由 | 组件 | 说明 |
-|------|------|------|
-| `/` | HomeView | 首页：最近播放 + 推荐 + 快速入口 |
-| `/browse` | BrowseView | 艺人列表 + 专辑浏览 |
-| `/artist/:id` | ArtistView | 艺人详情，显示专辑和全部歌曲 |
-| `/search?q=xxx` | SearchView | 搜索结果 |
-| `/playlist/:id` | PlaylistView | 播放列表详情（含用户自定义） |
-| `/settings` | SettingsView | 用户设置（主题、播放偏好） |
-| `/*` | NotFoundView | 404 页面 |
-
----
-
-## Phase 4: 状态管理 (Pinia Stores)
-
-### 4.1 `src/stores/player.ts` — 播放器核心状态
-
-```typescript
-interface PlayerState {
-  // ===== 当前播放队列 =====
-  /** 当前播放队列（有序） */
-  queue: Track[]
-  /** 当前播放索引（指向 queue） */
-  currentIndex: number
-  
-  // ===== 播放状态 =====
-  /** 播放状态 */
-  isPlaying: boolean
-  /** 当前播放时间（秒） */
-  currentTime: number
-  /** 总时长（秒） */
-  duration: number
-  /** 音量 0-1 */
-  volume: number
-  /** 是否静音 */
-  muted: boolean
-  
-  // ===== 播放模式 =====
-  playMode: PlayMode
-  
-  // ===== APlayer 实例引用 =====
-  /** APlayer 实例（由 MusicPlayer 组件挂载后设置） */
-  aplayerInstance: APlayer | null
-}
-
-// Getters:
-// - currentTrack: Track | null           // queue[currentIndex]
-// - queueLength: number
-// - progress: number                      // currentTime / duration (0-1)
-// - isLastTrack: boolean
-// - isFirstTrack: boolean
-
-// Actions:
-// - initPlayer(aplayer: APlayer): void           // 挂载 APlayer 实例
-// - setQueue(tracks: Track[], startIndex?: number): void
-// - play(index: number): void                    // 播放指定索引
-// - playTrack(trackId: string): void             // 按 ID 播放
-// - togglePlay(): void
-// - next(): void
-// - prev(): void
-// - seek(time: number): void
-// - setVolume(vol: number): void
-// - toggleMute(): void
-// - setPlayMode(mode: PlayMode): void
-// - addToQueue(tracks: Track[]): void            // 追加到队列末尾
-// - playNext(track: Track): void                 // 插入到当前之后播放
-// - removeFromQueue(index: number): void
-// - clearQueue(): void
-// - updateTime(t: number): void                  // APlayer timeupdate 回调
-// - updateDuration(d: number): void              // APlayer durationchange 回调
-```
-
-### 4.2 `src/stores/playlist.ts` — 播放列表管理
-
-```typescript
-interface PlaylistState {
-  /** 所有播放列表（系统 + 用户） */
-  playlists: Map<string, Playlist>
-  /** 所有音轨缓存（避免重复请求） */
-  trackCache: Map<string, Track>
-  /** 艺人列表缓存 */
-  artistCache: Artist[]
-  /** 加载状态 */
-  loading: boolean
-  /** 错误信息 */
-  error: string | null
-}
-
-// Getters:
-// - systemPlaylists: Playlist[]         // source === 'system'
-// - userPlaylists: Playlist[]           // source === 'user'
-// - allTracks: Track[]                  // 从 trackCache 展开
-// - getPlaylistById(id): Playlist
-// - getTrackById(id): Track | undefined
-// - getTracksByArtist(artistId): Track[]
-// - searchTracks(query): Track[]        // 本地搜索
-
-// Actions:
-// - fetchPlaylists(): Promise<void>     // 从 Worker /list 加载
-// - fetchTrack(trackId): Promise<Track>
-// - createPlaylist(name, desc, trackIds): Promise<Playlist>
-// - updatePlaylist(id, data): Promise<void>
-// - deletePlaylist(id): Promise<void>
-// - addToPlaylist(playlistId, trackId): Promise<void>
-// - removeFromPlaylist(playlistId, trackId): Promise<void>
-```
-
-### 4.3 `src/stores/user.ts` — 用户偏好
-
-```typescript
-interface UserState {
-  /** 主题：亮色/暗色/跟随系统 */
-  theme: 'light' | 'dark' | 'system'
-  /** 播放历史（最近 N 首） */
-  playHistory: string[]      // trackId[]
-  /** 收藏的歌曲 */
-  favorites: string[]        // trackId[]
-  /** 收藏的播放列表 */
-  favoritePlaylists: string[] // playlistId[]
-  /** 上次播放位置 */
-  lastSession: {
-    queue: string[]           // trackId[]
-    currentIndex: number
-    currentTime: number
-  } | null
-  /** 是否已初始化（从 localStorage 加载完成） */
-  initialized: boolean
-}
-
-// Getters:
-// - isDark: boolean (考虑 system 模式)
-// - recentTracks: Track[]
-// - isFavorite(trackId): boolean
-
-// Actions:
-// - init(): void             // 从 localStorage 加载
-// - setTheme(theme): void    // 持久化 + 应用
-// - addToHistory(trackId): void
-// - toggleFavorite(trackId): void
-// - saveSession(): void      // 保存当前播放状态
-// - restoreSession(): {queue, index, time} | null
-// - clearHistory(): void
-```
-
-### 4.4 `src/stores/search.ts` — 搜索
-
-```typescript
-interface SearchState {
-  query: string
-  results: Track[]
-  isSearching: boolean
-  searchHistory: string[]     // 最近搜索词
-}
-
-// Actions:
-// - search(q: string): Promise<void>
-// - clearResults(): void
-```
-
----
-
-## Phase 5: Track 名称解析器（关键！）
-
-当前 `playlist.json` 中的 `name` 字段存在 **3 种不一致格式**：
-
-| 格式 | 示例 | 数量 |
-|------|------|------|
-| `Artist - Title` | `Aqua - Barbie Girl` | ~254 首 |
-| `Artist- Title`（无空格） | `指南针(罗琦)- 不想再是小孩` | 若干 |
-| 纯文本（无分隔符） | `2007062760693141`, `与你到永久` | 若干 |
-
-**File: `src/utils/parser.ts`**
-
-```typescript
-export interface ParsedTrackName {
-  artist: string
-  title: string
-}
-
-export function parseTrackName(rawName: string): ParsedTrackName {
-  const dashPattern = /^(.+?)\s*-\s+(.+)$/
-  const match = rawName.match(dashPattern)
-
-  if (match) {
-    let artist = match[1].trim()
-    let title = match[2].trim()
-    // 清理 [mqms2] 等后缀
-    title = title.replace(/\s*\[.*?\]\s*$/, '').trim()
-    return { artist, title }
-  }
-
-  // Fallback: 没有分隔符 → 整段当标题
-  return { artist: 'Unknown', title: rawName.trim() }
-}
-```
-
----
-
-## Phase 6: APlayer + hls.js 集成详解（最关键组件）
-
-### 技术难点
-
-APlayer v1 内部使用 `<audio>` 元素，不原生支持 HLS。当歌曲 `type: 'hls'` 时，URL 指向 `.m3u8` manifest 文件，需要 hls.js 接管。
-
-### 解决方案
+### 2.1 前端分层
 
 ```
-APlayer 实例创建
+views/         页面，各自对应一条路由
   ↓
-监听 ap.on('listswitch') 事件
-  ↓ (延迟 100ms 确保 DOM 就绪)
-获取 ap.audio (当前 HTMLAudioElement)
+components/    可复用组件（layout 骨架 / player / playlist / search / artist / common）
   ↓
-判断 src 是否以 .m3u8 结尾
-  ↓ 是
-1. 销毁旧 Hls 实例
-2. 创建 new Hls() → hls.loadSource(url)
-3. hls.attachMedia(audio)
-  ↓ 否 (Safari 原生 HLS)
-直接设置 audio.src = url
+stores/        Pinia：player（播放状态）· playlist（曲库）· user（偏好）· search
+  ↓
+services/      api（fetch 封装）· music（曲库 API）· playlist（歌单 API）· lyrics（三级缓存）· prefetch
+  ↓
+utils/         constants · format · parser（文件名 → 歌手/歌名）
+types/         music · playlist · api（+ index.ts barrel，`@/types` 全项目在用）
 ```
 
-### MusicPlayer.vue 生命周期
+**`src/` 共 47 个文件**，最大的四个：
 
-```typescript
-// onMounted:
-//   1. new APlayer({ container, audio: [], ...config })
-//   2. 注册事件监听 → 同步到 playerStore
-//
-// watch(tracks + currentIndex):
-//   重建 APlayer 列表 → ap.list.clear() → ap.list.add([...]) → ap.list.switch(index)
-//
-// watch(isPlaying):  ap.play() / ap.pause()
-// watch(volume):     ap.volume(vol)
-// watch(playMode):   ap.mode(mode)
-//
-// onUnmounted:
-//   销毁 Hls 实例 + APlayer 实例
+```
+src/views/HomeView.vue              1002 行   主页，左右两栏（最大的单文件）
+src/components/layout/AppFooter.vue  537 行   底部播放控制条（进度/音量/±15s/播放模式）
+src/components/layout/AppHeader.vue  167 行   顶栏（Logo + 导航 + 主题 + 设置）
+src/components/layout/AppLayout.vue  109 行   布局骨架 + 背景层（壁纸/封面模糊/纯黑）
 ```
 
----
+### 2.2 布局骨架
 
-## Phase 7: 组件树 & Props/Emits 详解
-
-### 5.1 布局组件
-
-#### `AppLayout.vue`
 ```
-结构:
-┌─────────────────────────────────────┐
-│  AppHeader (固定顶部)               │
-├──────────┬──────────────────────────┤
-│          │                          │
-│ AppSidebar  │  <router-view />     │
-│ (桌面端)  │  (主内容区)            │
-│          │                          │
-├──────────┴──────────────────────────┤
-│  AppFooter / MusicPlayer (固定底部) │
-└─────────────────────────────────────┘
-```
-- **Props:** 无
-- **State:** `isSidebarOpen: boolean`（移动端抽屉控制）
-
-#### `AppHeader.vue`
-- **Props:** 无
-- **State:** 读取 `userStore.theme`
-- **包含:** Logo、导航链接（首页/浏览）、SearchBar、设置入口
-
-#### `AppSidebar.vue`
-- **Props:** `isOpen: boolean`
-- **Emits:** `close`, `navigate(path: string)`
-- **内容:** 当前播放队列、系统播放列表快捷入口、用户播放列表
-
-#### `AppFooter.vue`
-- **Props:** 无
-- **Slot:** `default`（嵌入 MusicPlayer）
-
-### 5.2 播放器组件
-
-#### `MusicPlayer.vue` — APlayer 封装
-```
-Props:
-  - 无（通过 playerStore 通信）
-
-职责:
-  1. onMounted: 创建 new APlayer({ container, ...config })
-  2. 将 aplayerInstance 注册到 playerStore.initPlayer()
-  3. 监听 APlayer 事件 → 同步到 playerStore
-  4. 监听 playerStore 变化 → 控制 APlayer
-
-APlayer 配置:
-  {
-    container: this.$refs.playerContainer,
-    autoplay: false,
-    theme: '#1DB954',
-    loop: 'all',
-    order: 'list',
-    preload: 'auto',
-    volume: 0.7,
-    mutex: true,          // 互斥：同时只有一个播放
-    lrcType: 3,           // 歌词显示模式
-    listFolded: true,     // 默认折叠播放列表
-    listMaxHeight: '250px',
-    audio: []             // 初始为空，动态设置
-  }
+.layout (fixed; inset:0; overflow:hidden)   ← 页面本身不滚动，滚动交给面板内部
+├─ .layout__bg / .layout__bg-cover / .layout__scrim    三层背景
+├─ AppHeader        顶栏
+├─ .layout__content 绝对定位在顶栏与底栏之间
+│   └─ <router-view>
+└─ AppFooter        底部播放控制条
 ```
 
-#### `PlayerControls.vue` — 自定义播放控制条（可选，增强 APlayer 默认 UI）
-```
-Props:
-  - track: Track | null
-  - isPlaying: boolean
-  - currentTime: number
-  - duration: number
-  - volume: number
-  - playMode: PlayMode
+### 2.3 Cloudflare 侧
 
-Emits:
-  - toggle-play
-  - next
-  - prev
-  - seek(time: number)
-  - volume-change(vol: number)
-  - mode-change(mode: PlayMode)
-  - toggle-playlist-panel
+```
+worker/src/
+├─ index.ts              路由表（pattern + methods + handler 三元组，正则匹配 path）
+├─ routes/  cors · list · proxy · artists · playlists · lyrics
+├─ utils/   r2 · response · types
+└─ （共 10 个文件 709 行）
 ```
 
-#### `LyricsPanel.vue` — 歌词面板
-```
-Props:
-  - lyrics: string | null      // LRC 格式歌词文本
-  - currentTime: number        // 当前播放时间，用于高亮当前行
+| 端点 | 说明 |
+|---|---|
+| `GET /list` | 曲库索引（读 R2 `playlist.json`，经 `response.ts` 补齐 `id`/`album`/`type`） |
+| `GET /proxy/*` | 音频流，**支持 HTTP Range**（206 / 416 / `Accept-Ranges`），mp3 靠它流式播放与 seek |
+| `GET /api/artists` · `/api/artists/:id` | 艺人列表与详情（Worker 侧从曲库派生） |
+| `GET /api/playlists*` | 用户歌单 **CRUD**（注意：前端接口已备，但无入口页面，见第五节） |
+| `GET /api/lyrics/:key` | 读 `lyrics/<key>.json`，**只读** |
 
-State:
-  - parsedLines: { time: number, text: string }[]  // 解析后的 LRC
-  - activeIndex: number
+`public/_routes.json` 把 `/api/*`、`/list*`、`/proxy*` 交给 Worker，其余走 Pages 静态资源。
 
-职责:
-  1. 解析 LRC 文本 → parsedLines
-  2. 根据 currentTime 计算 activeIndex
-  3. 自动滚动到当前歌词行
-```
+### 2.4 数据流要点
 
-### 5.3 播放列表组件
-
-#### `PlaylistPanel.vue`
-```
-Props:
-  - tracks: Track[]
-  - currentIndex: number
-  - visible: boolean
-
-Emits:
-  - select(index: number)
-  - remove(index: number)
-  - close
-```
-
-#### `PlaylistItem.vue`
-```
-Props:
-  - track: Track
-  - index: number
-  - isActive: boolean          // 是否当前播放
-  - showRemove: boolean
-
-Emits:
-  - click(trackId: string)
-  - remove(trackId: string)
-  - add-to-playlist(trackId: string)
-```
-
-#### `MyPlaylists.vue`
-```
-Props:
-  - playlists: Playlist[]
-
-Emits:
-  - select(playlistId: string)
-  - create
-  - delete(playlistId: string)
-  - rename(playlistId: string, name: string)
-```
-
-### 5.4 搜索组件
-
-#### `SearchBar.vue`
-```
-Props:
-  - modelValue: string         // v-model
-  - placeholder: string
-  - autofocus: boolean
-
-Emits:
-  - update:modelValue(value: string)
-  - search(query: string)
-  - clear
-```
-
-#### `SearchResults.vue`
-```
-Props:
-  - results: Track[]
-  - loading: boolean
-  - query: string
-
-Emits:
-  - play(trackId: string)
-  - add-to-queue(trackId: string)
-  - add-to-playlist(trackId: string)
-```
-
-### 5.5 艺人组件
-
-#### `ArtistList.vue`
-```
-Props:
-  - artists: Artist[]
-  - loading: boolean
-
-Emits:
-  - select(artistId: string)
-```
-
-#### `ArtistCard.vue`
-```
-Props:
-  - artist: Artist
-
-Emits:
-  - click(artistId: string)
-  - play-all(artistId: string)
-```
-
-### 5.6 通用组件
-
-#### `LoadingSpinner.vue`
-```
-Props:
-  - size: 'sm' | 'md' | 'lg'   // 默认 'md'
-  - text: string                // 加载文字
-```
-
-#### `ErrorMessage.vue`
-```
-Props:
-  - message: string
-  - retryable: boolean          // 是否显示重试按钮
-
-Emits:
-  - retry
-```
-
-#### `EmptyState.vue`
-```
-Props:
-  - icon: string                // 图标名
-  - title: string
-  - description: string
-  - actionText: string          // 操作按钮文字
-
-Emits:
-  - action
-```
+- **曲库**：Worker `/list` → `playlistStore`（`folders` 按曲目夹分组、`getTrackById`、`searchTracks`）
+- **歌词**：云端 R2（人工核对，优先级最高）→ `localStorage('ym:lrc:<id>')` → lrclib.net 在线匹配；
+  只在读，无写入接口（R2 上的歌词由 `upload-lyrics.mjs` 本机直写）
+- **时长**：`/list` 不下发，由挂载后 6s 的 `fillDurations()` 后台补（延迟是故意的，避开首屏抢带宽）
+- **历史/收藏**：`userStore` 存 localStorage（`playHistory` / `favorites` / `favoritePlaylists` / `lastSession`）
 
 ---
 
-## Phase 8: API 服务层
+## 三、关键设计决策（保留「为什么」）
 
-> ✅ 已完整实现。参见 `src/services/api.ts`, `src/services/music.ts`, `src/services/playlist.ts`
-
-### 8.1 `src/services/api.ts` — 基础封装
-
-```typescript
-const WORKER_BASE_URL = 'https://music-proxy.osmanfeng.workers.dev'
-
-// 通用请求函数
-async function request<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<ApiResponse<T>>
-
-// 错误处理 + 重试逻辑
-```
-
-### 8.2 `src/services/music.ts` — 音乐 API
-
-```typescript
-// GET /list → Track[]
-export async function fetchAllTracks(): Promise<Track[]>
-
-// GET /*?key=xxx/playlist.m3u8 → (由 hls.js 直接调用，无需封装)
-// 获取媒资 URL
-export function getMediaUrl(path: string): string
-// → `${WORKER_BASE_URL}/${encodeURIComponent(path)}`
-
-// GET /api/artists → Artist[]
-export async function fetchArtists(): Promise<Artist[]>
-
-// GET /api/artist/:id → ArtistDetail
-export async function fetchArtistDetail(id: string): Promise<ArtistDetailResponse>
-
-// 搜索（前端本地搜索 + 未来后端搜索）
-export async function searchTracks(query: string): Promise<Track[]>
-```
-
-### 8.3 `src/services/playlist.ts` — 播放列表 API
-
-```typescript
-// POST /api/playlists
-export async function createPlaylist(data: CreatePlaylistRequest): Promise<Playlist>
-
-// GET /api/playlists
-export async function fetchUserPlaylists(): Promise<Playlist[]>
-
-// PUT /api/playlists/:id
-export async function updatePlaylist(id: string, data: UpdatePlaylistRequest): Promise<void>
-
-// DELETE /api/playlists/:id
-export async function deletePlaylist(id: string): Promise<void>
-```
+| 决策 | 为什么 |
+|---|---|
+| **整页重写为 Vue 3 + TS** | 原实现是单个 `index.html` 里 400+ 行混合 HTML/CSS/JS，无组件化、无类型、无状态管理、密钥硬编码 |
+| **继续用 APlayer 而不是自研播放器** | 它有现成的列表/歌词/音量/进度 UI 与事件模型；自研的成本远高于改样式 |
+| **APlayer 必须省略 `type: 'mp3'`** | APlayer 收到 `type:'mp3'` 会**静默不设 src**；省略 type 时它按 URL 自己判断。只有 HLS 才显式给 `type:'hls'` |
+| **音频从 HLS 切片改为 mp3 直传** | HLS 要下载 m3u8 + 大量分片，在国内到 CF 的弱链路上起播要 1~2 分钟；mp3 + Range 一步到位 |
+| **上传时剥掉 mp3 内嵌封面** | 封面（APIC）几百 KB 且在文件头部，浏览器要先越过它才能出声，直接毁掉「mp3 出声快」的收益 |
+| **码率 ≤192 kbps** | 国内到 CF 实测约 50 KB/s，320 kbps 会卡 |
+| **布局：全屏壁纸 + 玻璃面板 + 页面不滚动** | 对齐参考站 `music.mmp.cc`；所有内容悬浮在背景之上，滚动只发生在面板内部 |
+| **主色红粉 `#ff5e5e`** | 同上，对齐参考站（原定绿色 `#1DB954` 已废弃） |
+| **歌词三级缓存（云端 → 本地 → lrclib）** | 云端是人工核对过的、可信度最高，必须放最前才能让重新上传立即可见；lrclib 兜底覆盖长尾 |
+| **Worker 独立 TS 子项目** | 与前端构建解耦（esbuild），`wrangler.toml` 的 `main` 指向构建产物；前端产物与 Worker 可各自部署 |
+| **CF 自带 Git 集成已停用** | 它不构建、把仓库根当静态产物发布，push 后约 1 分钟线上是源码版（白屏）。靠 `deployments_enabled=false` 收敛成只有 CI 一条链路 |
 
 ---
 
-## Phase 9: Cloudflare Worker 重构（TypeScript）
-
-> ✅ 已完整实现。参见 `worker/src/index.ts` + `worker/src/routes/*.ts` + `worker/src/utils/*.ts`
-
-### 9.0 Worker 独立目录结构
-
-Worker 有独立的依赖（`@cloudflare/workers-types`, `esbuild` vs `vite`）和构建流程，放在 `worker/` 子目录，有独立的 `package.json` 避免依赖冲突。
-
-```
-worker/
-├── src/
-│   ├── index.ts              # Worker 入口，路由分发
-│   ├── routes/
-│   │   ├── list.ts           # GET /list
-│   │   ├── proxy.ts          # GET /* (R2 代理)
-│   │   ├── playlists.ts      # CRUD /user-playlists/*
-│   │   └── cors.ts           # OPTIONS 预检
-│   └── utils/
-│       ├── response.ts       # JSON/错误响应构建器
-│       └── r2.ts             # R2 交互辅助
-├── dist/                     # esbuild 输出 (gitignored)
-├── tsconfig.json             # Worker 专用 TS 配置
-└── package.json              # Worker 专用依赖
-```
-
-**`worker/package.json`:**
-```json
-{
-  "name": "yuanfang-music-worker",
-  "private": true,
-  "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/worker.js --format=esm --platform=neutral",
-    "deploy": "npm run build && wrangler deploy dist/worker.js --name music-proxy"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "esbuild": "^0.20.0"
-  }
-}
-```
-
-**`wrangler.toml` 更新 main 路径:**
-```toml
-name = "music-proxy"
-main = "worker/dist/worker.js"
-compatibility_date = "2026-07-16"
-
-[[r2_buckets]]
-binding = "MUSIC"
-bucket_name = "music-bucket"
-```
-
-### 9.1 重构为 TypeScript
-
-保持现有路由逻辑，新增以下端点：
-
-| 方法 | 路径 | 说明 | 请求参数 | 响应 |
-|------|------|------|----------|------|
-| GET | `/list` | **保留** 获取全部播放列表 | — | `Track[]` |
-| GET | `/*` | **保留** 代理 R2 文件 | 路径即 R2 key | 文件流 |
-| OPTIONS | `*` | **保留** CORS 预检 | — | 204 + CORS headers |
-| GET | `/api/artists` | **新增** 获取艺人列表 | — | `{ artists: Artist[] }` |
-| GET | `/api/artists/:id` | **新增** 艺人详情 | — | `ArtistDetailResponse` |
-| GET | `/api/search?q=xxx` | **新增** 搜索 | `q: string` | `{ results: Track[] }` |
-| POST | `/api/playlists` | **新增** 创建播放列表 | `CreatePlaylistRequest` | `Playlist` |
-| GET | `/api/playlists/:id` | **新增** 获取播放列表 | — | `Playlist` |
-| PUT | `/api/playlists/:id` | **新增** 更新播放列表 | `UpdatePlaylistRequest` | `Playlist` |
-| DELETE | `/api/playlists/:id` | **新增** 删除播放列表 | — | `{ success: boolean }` |
-| PUT | `/api/playlists/:id/tracks` | **新增** 添加/移除曲目 | `{ trackId, action }` | `Playlist` |
-
-### 9.2 Worker 路由映射结构
-
-```typescript
-// worker/routes.ts
-const routes: Record<string, RouteHandler> = {
-  'GET /list': handleList,
-  'GET /api/artists': handleGetArtists,
-  'GET /api/artists/:id': handleGetArtistDetail,
-  'GET /api/search': handleSearch,
-  'POST /api/playlists': handleCreatePlaylist,
-  'GET /api/playlists': handleGetPlaylists,
-  'GET /api/playlists/:id': handleGetPlaylist,
-  'PUT /api/playlists/:id': handleUpdatePlaylist,
-  'DELETE /api/playlists/:id': handleDeletePlaylist,
-  'PUT /api/playlists/:id/tracks': handleModifyPlaylistTracks,
-}
-```
-
-### 9.3 用户播放列表存储方案
-
-**Phase A（本次实施）：** localStorage 前端存储
-- 优点：零后端改动，立即实现
-- 缺点：不同设备/浏览器不互通
-
-**Phase B（后续）：** Worker + R2 存储
-- 在 R2 中创建 `playlists/{userId}/{playlistId}.json`
-- Worker 提供 CRUD API
-- 用户标识：生成 UUID 存 localStorage，首次访问时创建
-
----
-
-## Phase 10: 关键 Composables
-
-### 10.1 `useAudioPlayer.ts`
-
-```typescript
-// 封装 APlayer 操作，与 playerStore 交互
-export function useAudioPlayer() {
-  const playerStore = usePlayerStore()
-  
-  // 初始化 HLS：为每个 track 指定 type: 'hls'
-  function buildAudioList(tracks: Track[]): APlayerAudio[]
-  
-  // 切换歌曲
-  function switchTrack(index: number): void
-  
-  // 播放/暂停
-  function togglePlay(): void
-  
-  // 获取播放进度
-  const progress = computed(() => ...)
-  
-  return {
-    buildAudioList,
-    switchTrack,
-    togglePlay,
-    progress,
-    // ...
-  }
-}
-```
-
-### 10.2 `usePlaylist.ts`
-
-```typescript
-export function usePlaylist() {
-  const playlistStore = usePlaylistStore()
-  const playerStore = usePlayerStore()
-  
-  // 播放整个播放列表
-  function playPlaylist(playlist: Playlist, startIndex?: number): void
-  
-  // 播放艺人全部歌曲
-  function playArtist(artistId: string): void
-  
-  // 添加到当前队列
-  function addToQueue(track: Track): void
-  
-  // 创建新播放列表
-  async function createNewPlaylist(name: string): Promise<Playlist>
-  
-  return { playPlaylist, playArtist, addToQueue, createNewPlaylist }
-}
-```
-
-### 10.3 `useLocalStorage.ts`
-
-```typescript
-// 将 localStorage 封装为响应式 ref
-export function useLocalStorage<T>(key: string, defaultValue: T): Ref<T>
-```
-
----
-
-## Phase 11: 样式方案
-
-### 11.1 CSS 变量体系 (`variables.css`)
-
-```css
-:root {
-  /* 主色调 */
-  --color-primary: #1DB954;        /* Spotify 绿 */
-  --color-primary-hover: #1ed760;
-  --color-primary-active: #169c46;
-  
-  /* 背景 */
-  --bg-primary: #121212;           /* 深色背景 */
-  --bg-secondary: #1e1e1e;         /* 卡片/面板 */
-  --bg-tertiary: #282828;          /* 悬停 */
-  --bg-elevated: #333333;          /* 浮层 */
-  
-  /* 文字 */
-  --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --text-tertiary: #727272;
-  
-  /* 布局 */
-  --header-height: 64px;
-  --footer-height: 80px;
-  --sidebar-width: 280px;
-  --content-max-width: 1200px;
-  
-  /* 间距 */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  
-  /* 圆角 */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
-  
-  /* 阴影 */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
-  
-  /* 过渡 */
-  --transition-fast: 150ms ease;
-  --transition-normal: 250ms ease;
-}
-```
-
-### 11.2 响应式断点
-
-```css
-/* Mobile First */
-/* sm: 640px  - 平板竖屏 */
-/* md: 768px  - 平板横屏 */
-/* lg: 1024px - 桌面 */
-/* xl: 1280px - 宽屏 */
-```
-
----
-
-## Phase 12: Vite 配置
-
-### `vite.config.ts`
-
-```typescript
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import { resolve } from 'path'
-
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src')
-    }
-  },
-  server: {
-    port: 3000,
-    // 代理 Worker API 到本地 wrangler dev 或生产
-    proxy: {
-      '/api': {
-        target: 'https://music-proxy.osmanfeng.workers.dev',
-        changeOrigin: true
-      }
-    }
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor': ['vue', 'vue-router', 'pinia'],
-          'player': ['aplayer', 'hls.js']
-        }
-      }
-    }
-  }
-})
-```
-
----
-
-## Phase 13: 部署配置
-
-### 13.1 `wrangler.toml` 更新
-
-```toml
-name = "music-proxy"
-main = "worker/index.ts"
-compatibility_date = "2026-07-16"
-
-[[r2_buckets]]
-binding = "MUSIC"
-bucket_name = "music-bucket"
-
-# 新增：KV 命名空间（用于用户播放列表）
-# [[kv_namespaces]]
-# binding = "PLAYLISTS"
-# id = "xxx"
-```
-
-### 13.2 GitHub Actions CI/CD (`.github/workflows/deploy.yml`)
-
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build          # tsc + vite build → dist/
-      - uses: cloudflare/pages-action@v1
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: yuanfang-music-player
-          directory: dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-
-  deploy-worker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-      - run: npm ci
-      - run: npx wrangler deploy worker/index.ts
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-```
-
-### 13.3 `package.json` scripts 更新
-
-```json
-{
-  "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "lint": "eslint src --ext .vue,.ts --fix",
-    "format": "prettier --write src/",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "worker:dev": "wrangler dev worker/index.ts",
-    "worker:deploy": "wrangler deploy worker/index.ts",
-    "generate:playlist": "tsx scripts/list-r2.ts",
-    "deploy:all": "npm run build && npm run worker:deploy"
-  }
-}
-```
-
----
-
-## Phase 14: 安全修复
-
-### 14.1 移除硬编码凭证
-
-`scripts/list-r2.ts` 改为从环境变量读取：
-
-```typescript
-// 使用环境变量而非硬编码
-const config = {
-  region: 'auto',
-  endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!
-  }
-}
-```
-
-在项目根目录创建 `.env.example`：
-```
-R2_ENDPOINT=https://xxx.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=your_access_key_id
-R2_SECRET_ACCESS_KEY=your_secret_access_key
-```
-
-`.gitignore` 中确认包含 `.env`。
-
----
-
-## Phase 15: 实施顺序
-
-### 第 1 天：脚手架 + 类型 + 路由
-1. ✅ Vite + Vue 3 项目初始化
-2. ✅ 安装所有依赖
-3. ✅ `tsconfig.json` / `vite.config.ts` 配置
-4. ✅ 创建完整目录结构
-5. ✅ 编写所有 TypeScript 类型定义 (`src/types/`)
-6. ✅ 配置 Vue Router (`src/router/index.ts`)
-7. ✅ 创建布局组件 (`AppLayout`, `AppHeader`, `AppSidebar`, `AppFooter`)
-8. ✅ 创建占位页面 (HomeView, BrowseView, ArtistView, etc.)
-9. ✅ 验证：`npm run dev` 能启动，路由跳转正常
-
-### 第 2 天：状态管理 + API 层
-10. ✅ 实现 `src/utils/storage.ts` 和 `src/utils/constants.ts`
-11. ✅ 实现 `src/services/api.ts` 基础封装
-12. ✅ 实现 `src/services/music.ts`
-13. ✅ 实现 Pinia stores：`player.ts`, `playlist.ts`, `user.ts`, `search.ts`
-14. ✅ 实现 composables：`useLocalStorage.ts`
-15. ✅ 验证：stores 单元测试通过，能成功 fetch 数据
-
-### 第 3 天：播放器组件
-16. ✅ 封装 `MusicPlayer.vue`（APlayer 集成）
-17. ✅ 实现 `PlayerControls.vue`
-18. ✅ 实现 `LyricsPanel.vue`
-19. ✅ 实现 `PlaylistPanel.vue` + `PlaylistItem.vue`
-20. ✅ 实现 `useAudioPlayer.ts` composable
-21. ✅ 验证：能播放音乐，播放列表可见，歌词显示正常
-
-### 第 4 天：业务页面
-22. ✅ 实现 `HomeView.vue`（最近播放 + 推荐）
-23. ✅ 实现 `BrowseView.vue` + `ArtistList.vue` + `ArtistCard.vue`
-24. ✅ 实现 `ArtistView.vue`（艺人详情 + 全部歌曲）
-25. ✅ 实现 `SearchView.vue` + `SearchBar.vue` + `SearchResults.vue`
-26. ✅ 验证：浏览、搜索、播放流程通畅
-
-### 第 5 天：用户播放列表 + 我的
-27. ✅ 实现 `MyPlaylists.vue`
-28. ✅ 实现 `PlaylistView.vue`
-29. ✅ 实现 `usePlaylist.ts` composable
-30. ✅ 实现 `SettingsView.vue`
-31. ✅ 通用组件：`LoadingSpinner`, `ErrorMessage`, `EmptyState`
-32. ✅ 验证：能创建/编辑/删除自定义播放列表
-
-### 第 6 天：Worker 重构 + 部署
-33. ✅ 重构 `worker/index.ts`（TypeScript）
-34. ✅ 实现 Worker 新路由：`/api/artists`, `/api/search`, `/api/playlists/*`
-35. ✅ 重写 `scripts/list-r2.ts`（安全修复）
-36. ✅ 更新 `wrangler.toml`
-37. ✅ 更新 CI/CD 配置
-38. ✅ 更新 `README.md`
-39. ✅ 最终验证：全流程测试 + 部署到 Cloudflare
-
----
-
-## Phase 16: 测试策略
-
-### 单元测试 (Vitest)
-
-| 测试目标 | 文件 |
-|----------|------|
-| pinia stores | `src/stores/*.test.ts` |
-| composables | `src/composables/*.test.ts` |
-| 工具函数 | `src/utils/*.test.ts` |
-| API 封装 | `src/services/*.test.ts` |
-
-### 组件测试
-
-| 关键组件 | 测试要点 |
-|----------|----------|
-| `MusicPlayer.vue` | APlayer 初始化、事件绑定 |
-| `SearchBar.vue` | v-model、搜索触发、防抖 |
-| `PlaylistPanel.vue` | 列表渲染、选择事件 |
-| `LyricsPanel.vue` | LRC 解析、高亮滚动 |
-
----
-
-## Phase 17: 兼容 & 迁移
-
-### 保留旧文件（标记为 legacy）
-- 原 `index.html` → `index.legacy.html`（备份）
-- 原 `worker.js` → 保留直到 `worker/index.ts` 验证通过
-- `playlist.json` → 继续使用直到 Worker `/list` API 验证通过
-
-### 新旧协作
-- 新旧系统共用同一个 R2 bucket 和 Cloudflare Pages 项目
-- 前端一次性切换到 Vue 版本（不需要渐进迁移，因为用户无感知）
-- `playlist.json` 作为启动数据冷备保留
-
----
-
-## Verification
-
-1. **开发环境验证：**
-   - `npm run dev` → 浏览器打开 localhost:3000
-   - 首页加载，显示艺人列表和播放列表
-   - 点击歌曲 → APlayer 播放 → hls.js 正常加载 m3u8
-   - 搜索功能正常
-   - 创建自定义播放列表 → 刷新后恢复（localStorage）
-   - 歌词面板正常显示
-
-2. **构建验证：**
-   - `npm run build` → 无 TS 错误，dist/ 产出正常
-   - `npm run preview` → 构建产物在本地预览正常
-
-3. **Worker 验证：**
-   - `npm run worker:dev` → wrangler 本地调试
-   - 所有 API 端点返回预期数据
-
-4. **部署验证：**
-   - `git push main` → GitHub Actions 自动部署
-   - Cloudflare Pages 更新 → 浏览器访问正常
-   - Worker 新版本上线 → API 调用正常
-
----
-
-## Phase 18: 潜在风险 & 应对
-
-| # | 风险 | 影响 | 应对措施 |
-|---|------|------|----------|
-| 1 | **APlayer + hls.js 兼容性** | APlayer 非为 HLS 设计，`ap.audio` 可能在 `listswitch` 事件时尚未就绪 | 使用 100ms `setTimeout` 延迟 + `MutationObserver` fallback；Safari 浏览器走原生 HLS |
-| 2 | **Track ID 稳定性** | 用户播放列表基于 `hashUrl()` 生成的 ID，R2 结构变更会导致引用断裂 | 播放前校验 ID 是否在 library 中存在；缺失的显示"曲目不可用" |
-| 3 | **大播放列表性能** | APlayer v1 在 250+ 首时可能有性能问题 | 必要时分页/虚拟滚动；`manualChunks` 分离 player 代码 |
-| 4 | **URL 编码问题** | 当前 URL 含 `%28`, `%29` 等编码字符，proxy 路由需正确编解码 | 使用 `decodeURIComponent`（当前代码已正确） |
-| 5 | **中文文件名乱码** | 如 `DJ ����` 等编码 artifacts | 前端 parser 正确处理 UTF-8 |
-| 6 | **用户播放列表数据丢失** | localStorage 清空后列表消失 | 后续 Phase B 实现 Worker + R2 云端同步 |
-
-## Phase 19: 歌词支持 (Lyrics Integration)
-
-### 19.1 歌词文件存储与索引
-
-在 R2 中为每首歌存储对应的 LRC 格式歌词文件，路径约定：
-
-```
-music-bucket/
-├── 艺人A/
-│   └── 歌曲名/
-│       ├── playlist.m3u8
-│       ├── segment-*.ts
-│       └── lyrics.lrc          ← 新增歌词文件
-```
-
-`list-r2.cjs` 扫描时检测 `lyrics.lrc` 文件，将 `lyricsUrl` 写入 `playlist.json`：
-
-```typescript
-interface Track {
-  // ...
-  lyricsUrl?: string   // Worker 代理 URL 指向 lyrics.lrc
-}
-```
-
-### 19.2 歌词解析器 (`src/utils/lyrics.ts`)
-
-```typescript
-export interface LyricLine {
-  time: number    // 毫秒
-  text: string
-}
-
-export function parseLRC(lrcText: string): LyricLine[] {
-  // 解析 [mm:ss.xx] 格式的时间轴
-  // 按时间排序，过滤空行
-  // 返回有序的歌词行数组
-}
-```
-
-### 19.3 歌词面板组件 (`LyricsPanel.vue`)
-
-已有组件骨架，需完善：
-
-| 功能 | 状态 |
-|------|------|
-| 从 `track.lyricsUrl` 加载 LRC 文件 | ⬜ 待实现 |
-| `parseLRC()` 解析歌词文本 | ⬜ 需实现 `src/utils/lyrics.ts` |
-| 根据 `currentTime` 高亮当前行 | ⬜ 待完善 |
-| 自动滚动的当前行 | ⬜ 待完善 |
-| 无歌词时的空状态显示 | ⬜ 待完善 |
-
-### 19.4 集成到播放器
-
-```
-MusicPlayer.vue
-  ↓ 监听 timeupdate
-LyricsPanel.vue
-  ↓ 通过 props 接收 currentTime + lyricsUrl
-  ↓ 高亮 + 滚动
-```
-
-### 19.5 歌词上传工具
-
-创建 `scripts/upload-lyrics.cjs`，支持批量上传 LRC 文件到 R2 并更新 `playlist.json`。
-
----
-
-## Phase 20: 自定义播放列表云端同步
-
-### 20.1 现状
-
-当前播放列表存储在 `localStorage`，清空浏览器数据或更换设备后列表丢失。
-
-### 20.2 Worker API 扩展
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/playlists` | 创建播放列表 |
-| `GET` | `/api/playlists` | 获取用户所有播放列表 |
-| `GET` | `/api/playlists/:id` | 获取单个播放列表详情 |
-| `PUT` | `/api/playlists/:id` | 更新播放列表（名称、描述、曲目） |
-| `DELETE` | `/api/playlists/:id` | 删除播放列表 |
-| `PUT` | `/api/playlists/:id/tracks` | 添加/移除曲目 |
-
-### 20.3 用户标识方案
-
-```typescript
-// 首次访问时生成 UUID 存 localStorage
-const userId = localStorage.getItem('ym:userId') || generateUUID()
-// 后续所有 API 请求通过 Header 携带
-headers: { 'X-User-Id': userId }
-```
-
-### 20.4 数据存储
-
-**Phase A（当前）：** localStorage 前端存储
-
-**Phase B（本次实施）：** Worker + R2 存储
-- R2 Key 格式：`playlists/{userId}/{playlistId}.json`
-- Worker 提供完整 CRUD API
-- 前端通过 API 调用，localStorage 作为离线缓存
-
-### 20.5 数据同步策略
-
-```
-写入: 前端 → API → R2 (同时写入 localStorage 作为缓存)
-读取: 优先从 API 获取 → 失败时降级到 localStorage
-同步: 启动时检测 localStorage 是否有未同步的更改 → 推送到云端
-```
-
-### 20.6 前端 Store 修改
-
-`src/stores/playlist.ts` 中 `createPlaylist` / `updatePlaylist` / `deletePlaylist` 方法增加 API 调用：
-
-```typescript
-async function createPlaylist(name: string, description?: string): Promise<Playlist> {
-  // 1. 调用 POST /api/playlists
-  // 2. 成功后更新本地 store
-  // 3. 失败时降级为 localStorage 存储 + 标记待同步
-}
-```
-
----
-
-## Phase 21: 移动端体验优化
-
-### 21.1 现状问题
-
-| 问题 | 描述 |
-|------|------|
-| 侧边栏 | 桌面端在 `<768px` 宽度仍占位 280px |
-| 播放器 | APlayer 在手机屏幕上过宽，控制按钮太小 |
-| 字体大小 | 整体偏小，不适合触屏操作 |
-| 触摸事件 | 未针对滑动、长按等手势优化 |
-| PWA | 未支持添加到主屏幕、离线播放 |
-
-### 21.2 响应式布局改进
-
-```css
-/* 断点策略 - Mobile First */
-/* 默认: 手机 (<640px) */
-/* sm: 640px+  - 平板竖屏 */
-/* md: 768px+  - 平板横屏 */
-/* lg: 1024px+ - 桌面 */
-
-/* 移动端隐藏侧边栏，改为底部导航或抽屉 */
-@media (max-width: 767px) {
-  .sidebar { display: none; }
-  .bottom-nav { display: flex; }  /* 底部 TabBar */
-}
-```
-
-### 21.3 布局调整
-
-```
-桌面端:                   移动端:
-┌─────┬──────────────┐   ┌──────────────┐
-│     │  AppHeader    │   │  AppHeader   │
-│     │  (搜索/设置)  │   │  (搜索/设置) │
-│     ├──────────────┤   ├──────────────┤
-│侧边栏│  router-view │   │  router-view │
-│     │  (内容区)     │   │  (全屏内容)  │
-│     │               │   │              │
-├─────┴──────────────┤   ├──────────────┤
-│  AppFooter / 播放器 │   │  播放器迷你条 │
-└────────────────────┘   └──────────────┘
-                          ┌──────────────┐
-                          │  底部导航栏   │
-                          │ 首页 浏览 我的│
-                          └──────────────┘
-```
-
-### 21.4 移动端组件改造
-
-**AppSidebar.vue** — 改为从右侧滑出的 Drawer：
-
-```typescript
-// 全屏遮罩 + 滑动面板
-// 支持触摸滑动关闭
-// 显示当前播放队列 + 播放列表入口
-```
-
-**MusicPlayer.vue** — 增加迷你模式：
-
-```typescript
-// 页面底部固定条：封面缩略图 + 歌名 + 播放/暂停按钮
-// 点击展开全屏播放页
-// 支持锁屏控制（Media Session API）
-```
-
-**PlaylistItem.vue** — 触控优化：
-
-```typescript
-// 增大点击热区（至少 44px）
-// 左滑显示「添加到队列」
-// 右滑显示「收藏」
-```
-
-### 21.5 PWA 支持
+## 四、日常流程
 
 ```bash
-npm install vite-plugin-pwa -D
+npm run dev                # 本地开发（Vite，端口 3000，/api 代理到线上 Worker）
+npm run build              # vue-tsc --noEmit && vite build
+npm run deploy:pages       # wrangler pages deploy dist
+npm run worker:build       # cd worker && npm run build（esbuild）
+npm run deploy:worker      # 构建 + wrangler deploy
+npm test                   # vitest run
 ```
 
-```typescript
-// vite.config.ts
-import { VitePWA } from 'vite-plugin-pwa'
+**曲库/歌词四条流程（顺序不可换）**
 
-plugins: [
-  VitePWA({
-    registerType: 'autoUpdate',
-    manifest: {
-      name: '远方音乐',
-      short_name: '远方音乐',
-      description: '在线 HLS 音乐播放器',
-      theme_color: '#1DB954',
-      icons: [...]
-    }
-  })
-]
+```bash
+npm run music:upload -- ./music    # 1 传 mp3（递归扫描 music/）
+npm run generate:playlist          # 2 扫 R2 重建 playlist.json（并同步到 R2）
+npm run lyrics:upload -- ./music   # 3 传歌词（按 playlist.json 反查 trackId）
+deploy-music.bat                   # 4 提交并推送（触发 CI 部署）
 ```
 
-### 21.6 性能优化
+> `lyrics:upload` 靠 `playlist.json` 的曲目名反查 trackId，**第 2 步没跑，新歌的歌词全匹配不上**。
 
-| 优化项 | 说明 |
-|--------|------|
-| 图片懒加载 | 艺人封面懒加载，IntersectionObserver |
-| 虚拟滚动 | 大播放列表（250+首）使用虚拟滚动 |
-| 代码分包 | 移动端优先加载首屏，APlayer/hls.js 懒加载 |
-| 字体压缩 | 仅保留中文常用字，减少字体文件体积 |
-| Service Worker | 缓存 playlist.json 和静态资源 |
+**网络依赖**：`wrangler` 推 CF API、`git push`、访问线上站点都需要代理或 WARP。
+完整踩坑见 `memory.md` 与全局记忆 `network-notes.md`。
 
 ---
 
-## Phase 22: Worker 自定义域名迁移
+## 五、未实施 / 部分实施
 
-### 22.1 背景
+### 5.1 用户歌单云端同步（原 Phase 20）—— **未实施**
 
-`*.workers.dev` 域名在中国大陆网络环境下无法直接访问，需绑定自定义域名。
+现状：歌单存在 localStorage，清空浏览器数据或换设备即丢失。
 
-### 22.2 配置步骤
+### 5.1 用户歌单云端同步（原 Phase 20）—— **隔离已完成，入口仍缺**
 
-1. 在 Cloudflare Dashboard → Workers & Pages → `music-proxy` → Triggers → Custom Domains
-2. 添加 `api.yuanfangorganics.ccwu.cc`
-3. 更新前端代码中所有 `WORKER_BASE_URL`
+**2026-10-12 已实施**：用户标识 + 数据隔离，方案 B（自定义 ID + 密码，前端派生 key）
 
-### 22.3 受影响文件
+```
+用户设定     ID + 密码（自定义口令，不是账号）
+前端派生     key = base64url(sha256("<ID>:<密码>")).slice(0, 22)     src/utils/userKey.ts
+请求         X-User-Key: <key>                                       src/services/api.ts（统一注入）
+Worker 存储  R2  user-playlists/<key>/index.json                     worker/src/routes/playlists.ts
+```
 
-| 文件 | 内容 |
-|------|------|
-| `src/utils/constants.ts` | `WORKER_BASE_URL` 常量 |
-| `list-r2.cjs` | `playlist.json` 中的 URL 前缀 |
-| `playlist.json` | 262 条曲目 URL |
-| `vite.config.ts` | 开发代理目标地址 |
-| `src/stores/playlist.ts` | `fetchPlaylists()` 中的硬编码 URL |
+设计要点：
+
+- **22 位 base64url 是刻意的** —— 字符集天然路径安全，服务端只需一道格式正则，
+  不必做 `../` 之类的穿越过滤（非法字符根本进不来）
+- **密码不到服务端** —— 前端算完只发 key，Worker 侧零密码逻辑（无 salt / 无 401 流程 / 不落库）
+- **按用户分片**顺带修掉了旧模型的**并发丢数据**：原来是所有歌单一个大数组、读全量改全量，
+  两人同时建歌单会后写覆盖先写（R2 没有 CAS）。现在冲突面缩到单用户内
+- 同时加固：`generateId()` 换成 `crypto.randomUUID()`（原实现 ≈31 bit 且带时间戳，可预测）、
+  加限额（`name ≤ 60` / `description ≤ 200` / `trackIds ≤ 500`）
+- 设置页新增「歌单同步」区块：ID + 密码 + 保存 + **指纹**（`fingerprint.slice(0, 8)`，
+  用来在两台设备上核对是不是同一个身份）
+
+> ⚠️ **威胁模型是「防误入 / 防随手翻」，不是防定向攻击。**
+> `GET /api/playlists` 带候选 key 返回空数组还是非空就是一个 oracle，且没有限流 ——
+> ID 已知 + 弱密码理论上可被在线爆破。UI 已强制密码 ≥ 8 位；
+> 要真正防定向攻击需要服务端存凭据 hash + PBKDF2 + 限流，那是「账号系统」（方案 C）的量级，当前不做。
+
+**剩余缺口：入口页面**
+
+```
+/playlist/:id 有路由有组件，全仓仍没有一处链接或 router.push 指向它
+```
+
+歌单前端代码全部保留（`services/playlist.ts` · `types/playlist.ts` · `composables/usePlaylist.ts` ·
+`views/PlaylistView.vue` · `components/playlist/` 三个组件），下一步补入口即可用。
+
+**已决定不做内容隔离**：`/proxy/*` 无鉴权且带 `Access-Control-Allow-Origin: *`，
+任何访客（甚至不登录）都能播放全部 393 首。**用户隔离的只是「我的歌单列表」，不是「我能听哪些歌」。**
+要给音频加鉴权的话，`<audio>` 无法携带自定义请求头（只能用 Cookie 或签名 URL），
+且 Range / 缓存逻辑要全部重做，成本高一个量级。
+
+### 5.2 测试（原 Phase 16）—— **几乎未实施**
+
+原计划覆盖 stores / composables / utils / services + 4 个关键组件。
+实际只有 `src/stores/playlist.test.ts`（77 行）一个文件。
+`npm test` 可用，但覆盖率接近于零。
+
+### 5.3 PWA（原 Phase 21.5）—— **未实施**
+
+`public/` 里没有 manifest、没有 service worker，不支持加到主屏与离线播放。
+
+### 5.4 移动端（原 Phase 21）—— **已实施，但方案与原计划完全不同**
+
+原计划的断点策略是 Mobile First 的 `640 / 768 / 1024`，实际用的是 **max-width 降级**：
+
+```
+≤900px   右侧播放面板 → 全屏歌词浮层（顶栏「词」按钮开关）；隐藏专辑列
+≤767px   底栏折成三行（曲目+音量 / 进度 / 控制居中）；--playerbar-height 88 → 120px
+≤639px   隐藏歌手列；顶栏收紧
+≤479px   隐藏音量滑块，只留静音按钮
+```
+
+同批落地的还有：进度条拖拽改 **Pointer Events + setPointerCapture**（原来用 mouse 事件，
+触摸屏根本拖不动）、移动端滑块常显（触摸没有 hover，原来永远 `scale(0)`）、
+新增快退/快进 15 秒。详见 `homepage-plan.md` 第六节。
+
+### 5.5 Worker `workers.dev` 回退域（原 Phase 22）—— **部分**
+
+自定义域名 `api.yuanfangorganics.ccwu.cc` 已绑定并在用。
+`src/utils/constants.ts` 里记录了回退域 `music-proxy.osmanfeng.workers.dev`（需代理），
+但代码里 `WORKER_BASE_URL` 是**硬编码常量、没有自动回退逻辑**。
 
 ---
 
-## Phase 23: Bug 修复记录
+## 六、原计划里有、现在没有的
 
-### 23.1 播放器 HLS 修复
+按 2026-10-12 的清理结果（commit `f3cb9cc`，12 文件 / 675 行）：
 
-| 问题 | 原因 | 修复 |
-|------|------|------|
-| 单击不播放 | `PlaylistItem.vue` 使用 `@dblclick` | 改为 `@click` |
-| HLS 无法播放 | APlayer 构建音频列表时未传 `type: 'hls'` | 添加 `type: 'hls'` |
-| `Hls is not defined` | APlayer 内部通过全局 `window.Hls` 引用 hls.js | `(window as any).Hls = Hls` |
-| `output000.ts 404` | `encodeURIComponent` 把 `/` 编码为 `%2F` | `item.Key.split('/').map(encodeURIComponent).join('/')` |
-| Worker 部署失败 | `compatibility_date` 过旧 | 更新到 `2026-07-21` |
-| `list-r2.js` ESM 错误 | `package.json` 含 `"type": "module"` | 重命名为 `.cjs` |
+| 原计划中的 | 现状 |
+|---|---|
+| `worker.js`（仓库根，1.9 KB） | **已删除** —— TS 重构验证早已通过，`wrangler.toml` 指向 `worker/dist/worker.js` |
+| `AppSidebar.vue`（390 行）+ `--sidebar-width` | **已删除** —— 用户要求移除左侧菜单，变量也零引用 |
+| `composables/useAudioPlayer.ts`（57 行） | **已删除** —— 零引用 |
+| `composables/useLocalStorage.ts`（44 行） | **已删除** —— 零引用 |
+| `utils/storage.ts`（55 行） | **已删除** —— 只被 barrel 转发，无人真用 |
+| `composables|utils|services|stores` 四个 `index.ts` barrel | **已删除** —— importer 数均为 0（`@/types` 的 barrel 保留，22 个文件在用） |
+| `PlayerControls.vue`（标注「可选，增强 APlayer 默认 UI」） | **从未创建** —— 播放控制实际在 `AppFooter.vue` |
+| `--header-height` / `--footer-height` | 各剩 1 处引用；布局已改用 `--topbar-height` / `--playerbar-height` |
+| `--content-max-width`（1200px） | **零引用**（遗留 token） |
+| `PAGE_SIZE` 常量 | **零引用**（`SEARCH_DEBOUNCE_MS` / `MAX_HISTORY` 仍在用） |
+| `src/assets/images/default-artist.svg` | **零引用**（未删，待确认） |
+| HLS 相关的 `prefetch.ts` 预取 | **保留但实际空跑** —— 库全是 mp3，m3u8 分片预取对 mp3 URL 是空操作。hls.js 与 HLS 代码路径按决定保留（未来可能传 HLS 源） |
+
+> 另：仓库根曾有一个 **12.9 MB 的 `FSY.png`**（零引用），已随 `f3cb9cc` 删除。
+> 但它的 blob **仍在 git 历史里**，`git clone` 依旧会下载 —— 要真正瘦身得重写历史（未做）。
 
 ---
 
-## 附录：关键参数速查
+## 附录 A：关键参数速查（已按当前代码校正）
 
 | 参数 | 值 | 位置 |
-|------|-----|------|
+|---|---|---|
 | Worker URL（生产） | `https://api.yuanfangorganics.ccwu.cc` | `src/utils/constants.ts`, `vite.config.ts` |
-| Worker URL（回退） | `https://music-proxy.osmanfeng.workers.dev` | 需 VPN 访问 |
-| R2 bucket | `music-bucket` | `wrangler.toml` |
-| Worker name | `music-proxy` | `wrangler.toml` |
-| Pages 自定义域 | `https://yuanfangorganics.ccwu.cc` | Cloudflare Dashboard |
-| Pages 项目名 | `yuanfang-music` | `.github/workflows/deploy.yml` |
-| Dev port | `3000` | `vite.config.ts` |
-| 主题色 | `#1DB954` | `src/assets/styles/variables.css` |
-| 歌词文件 | `lyrics.lrc` | R2 中与 playlist.m3u8 同级 |
-| 用户标识 | UUID 存 `localStorage('ym:userId')` | Phase 20 实施 |
-| 布局：header | `64px` | `variables.css` |
-| 布局：footer | `80px` | `variables.css` |
-| 布局：sidebar | `280px` | `variables.css` |
-| 内容最大宽度 | `1200px` | `variables.css` |
-| localStorage key 前缀 | `ym:` | `src/utils/constants.ts` |
-| 最大播放历史 | `100` 首 | `src/stores/user.ts` |
-| 搜索防抖 | `300ms` | `src/components/search/SearchBar.vue` |
-| 音乐文件类型 | `hls` (m3u8 + ts) | `src/types/music.ts` |
-| 分页大小 | `50` 首/页 | `src/utils/constants.ts` |
+| Worker URL（回退） | `https://music-proxy.osmanfeng.workers.dev` | 仅注释记录，无回退逻辑 |
+| R2 bucket / Worker 名 | `music-bucket` / `music-proxy` | `wrangler.toml` |
+| Pages 项目名 / 自定义域 | `yuanfang-music` / `yuanfangorganics.ccwu.cc` | CF Dashboard |
+| Dev 端口 | `3000`（`/api` 代理到线上 Worker） | `vite.config.ts` |
+| 构建分包 | `vendor`(vue/router/pinia) + `player`(aplayer/hls.js) | `vite.config.ts` |
+| **主题色** | `#ff5e5e`（**非**旧文档写的 `#1DB954`） | `variables.css` |
+| 布局尺寸 | `--topbar-height: 56px` / `--playerbar-height: 88px`（≤767px 120px）/ `--page-gutter: 20px` | `variables.css` |
+| **音频格式** | **mp3 直传 + HTTP Range**（**非** HLS 切片） | R2 + `worker/src/routes/proxy.ts` |
+| 音频码率上限 | 192 kbps | 上传脚本约定 |
+| **歌词文件** | `lyrics/<trackId>.json`（**非** `lyrics.lrc`） | R2 |
+| trackId 生成 | `generateTrackId(name)`，hash **原始文件名**（含 `[mqms]` 后缀） | `worker/src/utils/response.ts` |
+| localStorage 前缀 | `ym:` | `src/utils/constants.ts` |
+| 最大播放历史 | 100 首 | `src/utils/constants.ts` |
+| 搜索防抖 | 300 ms | `src/utils/constants.ts` |
+| 用户标识 | `base64url(sha256("<ID>:<密码>"))` 前 22 位，随 `X-User-Key` 发送 | `src/utils/userKey.ts` |
+| 歌单存储 | `user-playlists/<userKey>/index.json`（按用户分片） | `worker/src/routes/playlists.ts` |
+
+## 附录 B：原 Phase 1–23 去向
+
+留档，方便拿着 2026-07-21 那版的人对照：
+
+| 原 Phase | 内容 | 现状 |
+|---|---|---|
+| 1–15 | 脚手架 / 类型 / 路由 / stores / 解析器 / APlayer 集成 / 组件树 / API 层 / Worker 重构 / composables / 样式 / Vite / 部署 / 安全修复 / 实施顺序 | **已完成**，产物即当前代码；本文按现状重述，不再逐步罗列 |
+| 16 | 测试策略 | 几乎未实施 → 5.2 |
+| 17 | 兼容 & 迁移（保留 legacy 文件） | **已完成**，legacy 文件已于 2026-10-12 删除 → 第六节 |
+| 18 | 潜在风险 & 应对 | 已过期：APlayer listswitch 时序问题已修（改读事件参数而非 `ap.list.index`）；ID 稳定性、URL 编码、中文名乱码均已实测无问题 |
+| 19 | 歌词支持 | **已完成**，但解析器实际在 `src/services/lyrics.ts`（非原计划的 `src/utils/lyrics.ts`） |
+| 20 | 歌单云端同步 | **未实施** → 5.1 |
+| 21 | 移动端体验优化 | **已实施但方案不同**；PWA 未做 → 5.4 / 5.3 |
+| 22 | Worker 自定义域名迁移 | **已完成**；回退逻辑未做 → 5.5 |
+| 23 | Bug 修复记录 | 已并入 `memory.md`（踩坑与历史 bug 的统一去处） |
