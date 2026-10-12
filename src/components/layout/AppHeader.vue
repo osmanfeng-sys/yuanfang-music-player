@@ -225,14 +225,16 @@ function logout() {
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 
-/* 后缀署名：比标题暗一档、小一号，读起来像 handle 而不是第二个标题。
-   跟着 .header__logo 的 flex gap（8px）排，不额外加间距。 */
+/* 后缀署名：比标题小一号，读起来像 handle 而不是第二个标题。
+   跟着 .header__logo 的 flex gap（8px）排，不额外加间距。
+   字体指定微软雅黑、颜色用紫色（在壁纸照片上仍需 drop-shadow 提可读性）。 */
 .header__handle {
+  font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.5);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  color: #c084fc;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
   white-space: nowrap;
 }
 

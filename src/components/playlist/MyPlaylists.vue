@@ -48,11 +48,20 @@ function startCreate() {
   nextTick(() => newNameInput.value?.focus())
 }
 
+/**
+ * ⚠️ 名字为空时**不要**关闭输入行。
+ *
+ * 中文输入法下「回车」是给输入法确认候选词的，那一刻 v-model 还没拿到
+ * 提交后的文本，newName 读出来是空的 —— 旧写法会默默关掉输入行且什么都不做，
+ * 表现就是「按回车没保存」。所以这里空名字直接返回，让用户能看见输入行还在、
+ * 名次还留着，然后点「保存」。
+ */
 function confirmCreate() {
   const name = newName.value.trim()
+  if (!name) return
   creating.value = false
   newName.value = ''
-  if (name) emit('create', name)
+  emit('create', name)
 }
 
 function cancelCreate() {
@@ -94,11 +103,36 @@ function cancelCreate() {
             ref="newNameInput"
             v-model="newName"
             class="my-playlist-item__edit"
-            placeholder="歌单名称，回车创建"
+            placeholder="歌单名称"
             @keydown.enter="confirmCreate"
             @keydown.esc="cancelCreate"
-            @blur="confirmCreate"
           />
+        </div>
+        <!-- 显式保存按钮：中文输入法下回车是给输入法确认候选词的，
+             不能只靠回车。原先的 @blur 确认也去掉了 —— 失焦时机不可预测，
+             会在你没想提交的时候把行关掉。 -->
+        <div class="my-playlist-item__actions my-playlist-item__actions--always">
+          <button
+            class="my-playlist-item__btn my-playlist-item__btn--ok"
+            :disabled="!newName.trim()"
+            title="保存"
+            aria-label="保存"
+            @click="confirmCreate"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button
+            class="my-playlist-item__btn"
+            title="取消"
+            aria-label="取消"
+            @click="cancelCreate"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </button>
         </div>
       </li>
 
@@ -276,5 +310,23 @@ function cancelCreate() {
 
 .my-playlist-item__btn--delete:hover {
   color: #e74c3c;
+}
+
+/* 新建行的保存/取消常显 —— 不是 hover 才出来的那种 */
+.my-playlist-item__actions--always {
+  opacity: 1;
+}
+
+.my-playlist-item__btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.my-playlist-item__btn--ok {
+  color: var(--color-primary);
+}
+
+.my-playlist-item__btn--ok:hover:not(:disabled) {
+  background: var(--bg-elevated);
 }
 </style>
