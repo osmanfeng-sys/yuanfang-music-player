@@ -444,6 +444,10 @@ function skip(seconds: number) {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
+  /* ⚠️ 必须显式 min-width:0 —— input[type=range] 有固有宽度（Chrome 下约 129px），
+     而 flex 项的 min-width 默认是 auto（= 内容最小尺寸），于是它拒绝缩到 86px，
+     撑破 124px 的容器、右边溢出底框约 43px。 */
+  min-width: 0;
   height: 4px;
   border-radius: 4px;
   outline: none;
@@ -527,11 +531,10 @@ function skip(seconds: number) {
 }
 
 @media (max-width: 479px) {
+  /* 窄屏也保留音量条 —— 原来这里写的是 .footer__vol-slider { display: none }，
+     结果手机上根本没有音量条可拖。配合上面的 min-width:0 它会正确缩进容器里。 */
   .footer__volume {
-    width: auto;
-  }
-  .footer__vol-slider {
-    display: none;
+    width: 96px;
   }
 }
 </style>
