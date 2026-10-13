@@ -14,6 +14,8 @@ import { registerPlugin } from '@capacitor/core'
 /** 与 MusicPlayer.vue 同一个本地插件；registerPlugin 幂等，两处各注册一次没问题 */
 const nativeProbe = registerPlugin<{
   ping(): Promise<{ bridge?: string; playing?: boolean; serviceRunning?: boolean }>
+  /** 读本机 APK 的版本号；浏览器里插件不存在 → reject（调用处会吞掉） */
+  getAppVersion(): Promise<{ versionCode?: number; versionName?: string }>
 }>('PlaybackForeground')
 import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
@@ -37,6 +39,59 @@ const openedFolder = ref<string | null>(null)
 
 /** 搜索关键词 */
 const keyword = ref('')
+
+// ===== 客户端更新检查 =====
+//
+// 只对【原生改动】有意义：壳模式加载的是线上页面，网页改动重开就是最新的，
+// 只有 Java / 资源 / 图标 / 版本号变了才需要装新 APK。
+//
+// 只做「提示 + 点一下跳浏览器下载」。**不申请 REQUEST_INSTALL_PACKAGES、
+// 不做应用内安装** —— Android 不允许普通应用静默安装，系统必弹一次确认，
+// 与其绕不如把这一下交给系统，反正用户本来就要点。
+
+interface UpdateInfo {
+  versionName: string
+  url: string
+  notes?: string
+}
+
+/** 有新版时非空；同时驱动 ⓘ 按钮上的绿点 */
+const updateInfo = ref<UpdateInfo | null>(null)
+
+async function checkUpdate(): Promise<void> {
+  try {
+    // 本机版本只有原生侧知道。浏览器里没有 APK → 直接不提示
+    //（网页端没有"版本"这个概念，提示了也没东西可装）
+    const local = await nativeProbe.getAppVersion().catch(() => null)
+    if (!local?.versionCode) return
+
+    const res = await fetch('/api/version', { cache: 'no-store' })
+    // 404 = 还没有版本清单，是正常状态，不是错误
+    if (!res.ok) return
+
+    const v = (await res.json()) as {
+      versionCode?: number
+      versionName?: string
+      url?: string
+      notes?: string
+    }
+    if (typeof v.versionCode !== 'number' || v.versionCode <= local.versionCode) return
+    if (!v.url) return
+
+    updateInfo.value = {
+      versionName: v.versionName ?? String(v.versionCode),
+      url: v.url,
+      notes: v.notes
+    }
+  } catch {
+    // 检查更新失败不该打扰用户 —— 静默
+  }
+}
+
+/** 跳系统浏览器下载。壳里 window.open 会交给浏览器（OpenShop 那个按钮已验证过这条路） */
+function openUpdate() {
+  if (updateInfo.value) window.open(updateInfo.value.url, '_blank')
+}
 
 /** 弹层 */
 const showInfo = ref(false)
@@ -111,6 +166,10 @@ onMounted(async () => {
         ? '★ 原生桥未连通：Capacitor 找不到 PlaybackForeground 插件（未注册）'
         : `原生桥调用失败：${msg}`
     })
+
+  // 检查有没有新版 APK。不 await —— 它自己会静默处理失败，
+  // 不该拖慢首屏（浏览器里 getAppVersion 直接 reject，等于跳过）
+  checkUpdate()
 
   // 支持 `/?tab=playing|playlist|search` 直接落在指定页签
   // （歌单详情页的「正在播放」按钮靠它跳过来）
@@ -328,7 +387,12 @@ watch(
           <img src="/ICO/shop-icon.png" alt="" class="home__icon-img" />
         </button>
 
-        <button class="home__icon-btn" title="播放器说明" @click="showInfo = true">
+        <button
+          class="home__icon-btn"
+          :class="{ 'home__icon-btn--dot': !!updateInfo }"
+          :title="updateInfo ? `有新版本 v${updateInfo.versionName}` : '播放器说明'"
+          @click="showInfo = true"
+        >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <circle cx="12" cy="12" r="9" />
             <path d="M12 11v5M12 8h.01" />
@@ -580,6 +644,12 @@ watch(
           <button class="home__icon-btn" @click="showInfo = false">✕</button>
         </div>
         <div class="home__modal-body">
+          <!-- 有新版时置顶。点一下交给系统浏览器下载，装的时候系统还会再确认一次 -->
+          <p v-if="updateInfo" class="home__modal-update">
+            <b>发现新版本 v{{ updateInfo.versionName }}</b>
+            <button class="home__update-btn" @click="openUpdate">下载更新</button>
+            <span v-if="updateInfo.notes" class="home__update-notes">{{ updateInfo.notes }}</span>
+          </p>
           <p><b>远方音乐播放器</b> — 自建在线音乐库，音频存放在 Cloudflare R2，按需拉取。</p>
           <p><b>正在播放 / 乐库 / 搜索</b>：三个页签。<b>乐库</b>按音乐夹（R2 一级目录）分组，点进去看该夹全部曲目，点任意一首即以该夹为队列播放；只有直接放在存储桶根目录、不属于任何音乐夹的才归为「未分类」。<b>搜索</b>按歌名或歌手实时过滤全库。</p>
           <p><b>歌单</b>：顶栏「歌单」进入。任意列表行末尾的心形按钮可以把歌加进歌单；歌单详情页的「从曲库添加」支持两级目录点选 + 多选。</p>
@@ -672,6 +742,8 @@ watch(
 }
 
 .home__icon-btn {
+  /* 给 --dot 那个 ::after 圆点当定位基准 */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -693,6 +765,48 @@ watch(
   height: 15px;
   width: auto;
   display: block;
+}
+
+/* 有新版本时 ⓘ 按钮右上角的绿点（和顶栏未登录提示同一个绿） */
+.home__icon-btn--dot::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+/* 说明弹层里的更新提示行 */
+.home__modal-update {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.home__update-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  color: #0b1f12;
+  background: #4ade80;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.home__update-notes {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 
 .home__icon-btn:hover,

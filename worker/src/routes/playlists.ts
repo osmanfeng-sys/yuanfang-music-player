@@ -30,6 +30,58 @@ function indexKey(uid: string): string {
   return `${PLAYLIST_PREFIX}/${uid}/index.json`
 }
 
+/** 首次到场记录：user-playlists/<key>/seen.json */
+function seenKey(uid: string): string {
+  return `${PLAYLIST_PREFIX}/${uid}/seen.json`
+}
+
+/** 展示用 ID 的长度上限（够放中文 ID 了） */
+const MAX_ID_LEN = 40
+
+/**
+ * 取请求头里的「展示用 ID」—— 前端把用户 ID 原文带过来，**仅用于后台看谁在用**。
+ *
+ * ⚠️ 这个头**完全不可信**：这套接口没有任何鉴权，谁都能伪造它；
+ *    而且真正的身份是 X-User-Key（不可逆哈希），这个 ID 不参与任何判断。
+ *    所以写入前必须限长 + 去掉控制字符 —— 否则有人能塞进超大字符串，
+ *    或用换行污染 list-users.mjs 的输出。
+ */
+function userIdOf(request: Request): string {
+  const raw = request.headers.get('X-User-Id') ?? ''
+  let id = raw
+  try {
+    id = decodeURIComponent(raw)
+  } catch {
+    // 不是合法的百分号编码就按原样用（前端是用 encodeURIComponent 发的）
+  }
+  return id.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, MAX_ID_LEN)
+}
+
+/**
+ * 首次到场记一笔。
+ *
+ * 为什么需要：GET 本来是纯读，登录/读取在服务端不留任何痕迹，
+ * 于是「有多少人在用」完全问不出来。这里只在 seen.json **不存在**时写一次 ——
+ * 写入次数 = 每个用户一次，可以忽略。
+ *
+ * 刻意不记 lastSeen：那要每次请求都读+写，"谁来过"这个需求不需要。
+ *
+ * 失败**不能影响主流程** —— 记不上就算了，不能让歌单因此读不出来。
+ */
+async function touchUser(env: Env, uid: string, request: Request): Promise<void> {
+  try {
+    const key = seenKey(uid)
+    const head = await env.MUSIC.head(key)
+    if (head) return
+    await putJSON(env, key, {
+      firstSeen: new Date().toISOString(),
+      id: userIdOf(request)
+    })
+  } catch {
+    // 静默：这只是统计，不该让主流程失败
+  }
+}
+
 /**
  * 读取该用户的全部歌单。
  *
@@ -68,6 +120,10 @@ function validateBody(body: {
 export async function handleGetPlaylists(request: Request, env: Env): Promise<Response> {
   const uid = userKeyOf(request)
   if (!uid) return error('Unauthorized', 401)
+
+  // 「登录」的信号就打在这里：前端一进首页、只要配了凭据就会拉一次歌单。
+  // 放在这个分支而不是 POST/PUT/DELETE —— 那些是"改歌单"，不是"到场"。
+  await touchUser(env, uid, request)
 
   return json(await getAllPlaylists(env, uid))
 }

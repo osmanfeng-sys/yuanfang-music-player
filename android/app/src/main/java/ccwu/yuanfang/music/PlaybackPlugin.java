@@ -1,5 +1,8 @@
 package ccwu.yuanfang.music;
 
+import android.content.pm.PackageInfo;
+import android.os.Build;
+
 import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -100,6 +103,36 @@ public class PlaybackPlugin extends Plugin {
 
         PlaybackService.updateNowPlaying(title, artist, playing == null || playing, cover, lyric);
         call.resolve();
+    }
+
+    /**
+     * 读本机 APK 的版本号 —— 给前端的「检查有没有新版」用。
+     *
+     * 为什么放在这个插件、而不是引 @capacitor/app：
+     * 插件已经在 MainActivity 注册、前端也已经在用 PlaybackForeground 这个名字，
+     * 加一个方法零成本；而多一个依赖就多一处构建风险。
+     *
+     * 失败时回 versionCode = 0 —— 前端判断是「读不到就不提示更新」，
+     * 不会因为读不到而误报有新版本。
+     */
+    @PluginMethod
+    @SuppressWarnings("deprecation")
+    public void getAppVersion(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            PackageInfo info = getContext()
+                    .getPackageManager()
+                    .getPackageInfo(getContext().getPackageName(), 0);
+            long code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode()
+                    : info.versionCode;
+            ret.put("versionCode", code);
+            ret.put("versionName", info.versionName);
+        } catch (Throwable t) {
+            ret.put("versionCode", 0L);
+            ret.put("versionName", "");
+        }
+        call.resolve(ret);
     }
 
     /**

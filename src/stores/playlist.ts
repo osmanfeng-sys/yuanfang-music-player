@@ -224,8 +224,10 @@ export const usePlaylistStore = defineStore('playlist', () => {
   // 没设置「歌单同步」凭据时走 localStorage —— 功能照常可用，只是只在本机。
   // 设置凭据后走 Worker（按 X-User-Key 隔离）。
   //
-  // ⚠️ **不做双向同步、不做冲突合并**：有凭据就以云端为准，
-  // 本机那份既不会自动上传，也不会和云端合并。
+  // ⚠️ **不做双向同步、不做冲突合并**：有凭据就以云端为准。
+  //    **唯一的例外**是「首次登录」——见 loadUserPlaylists() 里的迁移：
+  //    云端还是空的、而本机有歌单时，把本机那份一次性搬上去。
+  //    不加这一步的话，先在本机建歌单、之后才登录的人会觉得歌单丢了。
 
   /** localStorage 的 key（实际会带 `ym:` 前缀） */
   const USER_PLAYLISTS_KEY = 'userPlaylists'
@@ -256,6 +258,30 @@ export const usePlaylistStore = defineStore('playlist', () => {
           '（可在顶栏人像菜单里退出登录，改用本机模式）'
         return
       }
+
+      // ─── 首次登录：把本机那份搬到云端 ───
+      //
+      // 场景：用户先在本机建了歌单，之后才在设置里填 ID/密码。
+      // 「有凭据就以云端为准」会把那些本机歌单**直接看不到**（不是删除，
+      // 只是被云端数据取代了），看起来就像丢了。
+      //
+      // 只在「云端是空的 且 本机有东西」时做一次；之后一律以云端为准 ——
+      // 仍然不做双向同步、不做冲突合并。
+      const local = loadJSON<Playlist[]>(USER_PLAYLISTS_KEY, [])
+      if (remote.length === 0 && local.length > 0) {
+        const migrated = await migrateLocalToCloud(local)
+        if (migrated === null) {
+          // 没搬成功就【显示本机那份】，别让用户觉得歌单没了。
+          // 本机缓存不清，下次进来云端仍是空的，会自动再试一次。
+          error.value = '本机歌单上传到云端失败，暂时先显示本机这份，下次会自动重试'
+          for (const p of local) playlists.value[p.id] = { ...p, source: 'user' }
+          return
+        }
+        // 搬完了：清掉本机那份，避免以后被重复当成"待上传"
+        saveJSON(USER_PLAYLISTS_KEY, [])
+        remote.push(...migrated)
+      }
+
       for (const p of remote) {
         // 补 source：早期写入的对象没有这个字段，而 userPlaylists 是按它过滤的
         playlists.value[p.id] = { ...p, source: 'user' }
@@ -266,6 +292,29 @@ export const usePlaylistStore = defineStore('playlist', () => {
     for (const p of loadJSON<Playlist[]>(USER_PLAYLISTS_KEY, [])) {
       playlists.value[p.id] = { ...p, source: 'user' }
     }
+  }
+
+  /**
+   * 把本机歌单逐条创建到云端，返回云端分配的新歌单；**任一条失败就返回 null**。
+   *
+   * ⚠️ id 会变：本机 id 是 `playlist_<时间戳>_<随机>`，云端由 Worker 生成 uuid。
+   *    这是有意的 —— 让云端做 id 的唯一来源，不做 id 映射（没有别的地方引用它）。
+   * 全成功才返回，是为了让调用方能用"清本机缓存"作为"迁移完成"的标记；
+   * 部分成功会让本机剩下的那些永远搬不过去。
+   */
+  async function migrateLocalToCloud(local: Playlist[]): Promise<Playlist[] | null> {
+    const created: Playlist[] = []
+    for (const p of local) {
+      // CreatePlaylistRequest 的 trackIds 必填，description 不接受显式 undefined
+      const c = await apiCreatePlaylist({
+        name: p.name,
+        trackIds: p.trackIds ?? [],
+        ...(p.description ? { description: p.description } : {})
+      })
+      if (!c) return null
+      created.push(c)
+    }
+    return created
   }
 
   /** 创建歌单。云端模式先落云端拿到稳定 id，再写本地 state */

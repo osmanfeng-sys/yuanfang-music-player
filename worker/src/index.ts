@@ -14,6 +14,7 @@ import {
   handleDeletePlaylist
 } from './routes/playlists'
 import { handleGetLyrics } from './routes/lyrics'
+import { handleGetVersion } from './routes/version'
 import type { Env, RouteHandler } from './utils/types'
 
 /** 路由表：方法+路径模式 → 处理器 */
@@ -43,6 +44,9 @@ const routes: Array<{
 
   // 歌词（云端缓存，只读；上传走本机脚本直写 R2）
   { pattern: /^\/api\/lyrics\/(.+)$/, methods: ['GET'], handler: (req, env, key) => handleGetLyrics(req, env, key) },
+
+  // 客户端更新检查（只读 R2 的 version.json）
+  { pattern: /^\/api\/version$/, methods: ['GET'], handler: handleGetVersion as RouteHandler },
 
   // R2 文件代理（兜底路由，放在最后）
   { pattern: /^\/.+$/, methods: ['GET', 'HEAD'], handler: handleProxy as RouteHandler },

@@ -78,6 +78,12 @@ public class PlaybackService extends Service {
      */
     private volatile String lyric = "";
 
+    /**
+     * 上一次真正推给系统的「元数据指纹」。见 publish()。
+     * （通知那边没有对应的指纹 —— 它必须每次重发，原因见 publish() 里那段注释。）
+     */
+    private volatile String lastMetaSig = null;
+
     /** 活跃的媒体会话，见类注释 */
     private MediaSession session;
 
@@ -119,7 +125,8 @@ public class PlaybackService extends Service {
         s.applyNowPlaying(title, artist, playing, coverUrl, lyricLine);
     }
 
-    private void applyNowPlaying(String t, String a, boolean playing, String coverUrl, String lyricLine) {
+    private void applyNowPlaying(
+            String t, String a, boolean playing, String coverUrl, String lyricLine) {
         title = t == null ? "" : t;
         artist = a == null ? "" : a;
         playingNow = playing;
@@ -147,33 +154,58 @@ public class PlaybackService extends Service {
      */
     private void publish() {
         if (session != null) {
-            MediaMetadata.Builder md = new MediaMetadata.Builder()
-                    .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                    // ⚠️ 这是**妥协**，不是最优解。
-                    //
-                    // 三星锁屏的媒体卡片只渲染两行：歌名 + 这个键。实测它**不认**
-                    // DISPLAY_SUBTITLE（官方文档说 getSubtitle() 会优先取它，
-                    // 但三星自己读的就是 ARTIST），所以想让歌词上锁屏，
-                    // 只能占用这两行里的一行 —— 歌名不能让，那就只能是第二行。
-                    //
-                    // 代价：蓝牙 / 车机（AVRCP）读的也是 ARTIST，
-                    // 那边"歌手"位置同样会变成歌词。真歌手退到 ALBUM / DESCRIPTION。
-                    .putString(MediaMetadata.METADATA_KEY_ARTIST, displayLine())
-                    .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, displayLine())
-                    // 第三行（部分 UI 才显示）：把真歌手放这儿，能显示就显示
-                    .putString(MediaMetadata.METADATA_KEY_ALBUM, artist)
-                    .putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, artist);
-            if (artBitmap != null) {
-                // 两个键都塞：锁屏大图取 ART，媒体卡片/通知取 ALBUM_ART，
-                // 各家 UI 取哪个都能显示，省得适配
-                md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBitmap);
-                md.putBitmap(MediaMetadata.METADATA_KEY_ART, artBitmap);
+            // ── 元数据：只有内容真的变了才重设 ──
+            //
+            // ⚠️ 歌词是塞在元数据里的（三星锁屏只认那两个键），所以它每换一句
+            //    这份指纹就会变 —— 这是**躲不掉**的：要让锁屏显示歌词就必须重设元数据。
+            //    但除此之外的每次调用（播放/暂停、位置刷新）都不该碰它。
+            String metaSig = title + '\u0001' + displayLine() + '\u0001'
+                    + (artBitmap != null);
+            if (!metaSig.equals(lastMetaSig)) {
+                lastMetaSig = metaSig;
+                MediaMetadata.Builder md = new MediaMetadata.Builder()
+                        .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                        // ⚠️ 这是**妥协**，不是最优解。
+                        //
+                        // 三星锁屏的媒体卡片只渲染两行：歌名 + 这个键。实测它**不认**
+                        // DISPLAY_SUBTITLE（官方文档说 getSubtitle() 会优先取它，
+                        // 但三星自己读的就是 ARTIST），所以想让歌词上锁屏，
+                        // 只能占用这两行里的一行 —— 歌名不能让，那就只能是第二行。
+                        //
+                        // 代价：蓝牙 / 车机（AVRCP）读的也是 ARTIST，
+                        // 那边"歌手"位置同样会变成歌词。真歌手退到 ALBUM / DESCRIPTION。
+                        .putString(MediaMetadata.METADATA_KEY_ARTIST, displayLine())
+                        .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, displayLine())
+                        // 第三行（部分 UI 才显示）：把真歌手放这儿，能显示就显示
+                        .putString(MediaMetadata.METADATA_KEY_ALBUM, artist)
+                        .putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, artist);
+                if (artBitmap != null) {
+                    // 两个键都塞：锁屏大图取 ART，媒体卡片/通知取 ALBUM_ART，
+                    // 各家 UI 取哪个都能显示，省得适配
+                    md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBitmap);
+                    md.putBitmap(MediaMetadata.METADATA_KEY_ART, artBitmap);
+                }
+                session.setMetadata(md.build());
             }
-            session.setMetadata(md.build());
-            // 暂停时状态要跟着变，否则锁屏上的按钮一直是"暂停"图标
+
+            // ── 播放状态：每次都推 ──
+            // 位置就在这份状态里。它比 setMetadata 轻 —— 不会让系统重刷封面，
+            // 所以位置刷新走这条，别去碰元数据。
+            // 暂停时状态也要跟着变，否则锁屏上的按钮一直是"暂停"图标。
             session.setPlaybackState(buildPlaybackState());
         }
 
+        // ── 通知：每次都要重发 ──
+        //
+        // ⚠️ 实测出来的硬约束：**锁屏那张卡片上的歌词是跟着通知重建走的**。
+        //
+        //    曾经为了消除"封面随歌词闪"加过"内容没变就不重发"的判断，结果
+        //    封面不闪了、**歌词也不刷新了** —— 反过来证明这两件事是同一个机制：
+        //        重发通知 = 卡片重建 = 歌词更新 ＋ 封面闪一下
+        //    也就是说想留住"歌词跟着音乐滚"，就得接受这次重建。
+        //
+        //    要减轻闪动只能从别处下手（节流歌词 / 去掉大图标 / 干脆不要歌词），
+        //    每一个都有代价，是取舍不是修复 —— 不适合悄悄改，见 memory 里的讨论。
         NotificationManager nm =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) {
@@ -280,9 +312,23 @@ public class PlaybackService extends Service {
     /**
      * 播放状态。
      *
-     * 位置与速度是**故意**给 UNKNOWN 的：真正的进度在 WebView 的 <audio> 里，
-     * 原生侧拿不到也不该假装拿到（这一版也不做进度条）。
-     * setActions 里声明了哪些动作，系统就画哪几个按钮。
+     * ⚠️ 位置**故意**给 UNKNOWN，也**故意不声明** ACTION_SEEK_TO ——
+     *    不是漏了，是**验证过没用**：
+     *
+     *      第一步  加上真实位置 + 总时长        → 锁屏卡片没有任何变化，播放流畅
+     *      第二步  再加 ACTION_SEEK_TO + onSeekTo → 依然没有可拖的控制点，播放流畅
+     *
+     *    原因看对比截图就清楚了：酷狗锁屏那张卡片上多出 ♡ / 词 / 头像三个
+     *    **App 专属按钮**，说明那是它【自己画的布局】（自带 RemoteViews），
+     *    进度条和时间文字都在它自己的布局里。我们用系统给的通用卡片，
+     *    上面那条灰线是**装饰分隔线、不是进度条**（最早那张截图里它就在，从未填充）。
+     *    三星自带的音乐 App 同样没有 —— 用户实测。
+     *
+     *    要做出可拖的进度条，得自己写通知布局（RemoteViews），是另一件事。
+     *
+     * 另一个副产品结论：上次那版播放卡顿**不是 SEEK_TO 引起的**（第一步第二步都流畅），
+     * 唯一的差异是前端那个"每 5 秒推一次位置"的定时器 —— 就是它。
+     * 以后做进度相关的东西别再走定时器。
      */
     private PlaybackState buildPlaybackState() {
         return new PlaybackState.Builder()

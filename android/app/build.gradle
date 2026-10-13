@@ -1,5 +1,27 @@
 apply plugin: 'com.android.application'
 
+// ===== 发布签名 =====
+//
+// 从 android/keystore.properties 读（该文件与 *.jks 都已 gitignore，绝不入库）。
+//
+// 为什么必须固定签名：Android 只允许【同签名】的包覆盖安装。
+// 之前发的全是 debug 包，签名来自**机器相关**的 ~/.android/debug.keystore ——
+// 换台电脑或上 CI 构建出来的包签名不同，装不上旧包，只能卸载重装，
+// 而卸载会清掉 localStorage（歌单凭据、背景设置）。
+//
+// ⚠️ debug 与 release **都**指向同一个密钥：
+//    本机日常装的就是 debug 包（assembleDebug），只固定 release 的话
+//    debug 包的签名照旧随机，等于没解决。
+//
+// 读不到 keystore.properties 就退回默认签名 —— 换台机器 clone 下来仍能构建，
+// 不会因为缺密钥直接失败。
+def keystorePropsFile = rootProject.file('keystore.properties')
+def hasReleaseKey = keystorePropsFile.exists()
+def keystoreProps = new java.util.Properties()
+if (hasReleaseKey) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace = "ccwu.yuanfang.music"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +38,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKey) signingConfig signingConfigs.release
+        }
+        debug {
+            if (hasReleaseKey) signingConfig signingConfigs.release
         }
     }
 }
@@ -40,6 +78,35 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+}
+
+// ===== APK 输出文件名 =====
+//
+// 分两种，按构建类型走：
+//   debug    `yuanfang-music_2113.apk`  —— 带构建时刻（HHmm）。
+//            调试期间会连打好几个包，靠时间区分，不会互相覆盖。
+//   release  `yuanfang-music_V1.1.apk`  —— 不带时间、带版本号。
+//            这是"确定版"，用来区分真正发布的版本，一个版本一个文件。
+//
+// ⚠️ 时间取的是【配置阶段】的时刻。改 build.gradle 后 Gradle 会重新配置，
+//    所以每次 assemble 拿到的都是当时的时间。精确到分钟 ——
+//    同一分钟内连打两次会同名覆盖，要更细就把 HHmm 改成 HHmmss。
+//
+// ⚠️ 必须用 androidComponents（AGP 8 的现代 API）。写成 `applicationVariants.all` 会在
+//    配置阶段直接报 "Could not get unknown property 'applicationVariants'"
+//    —— AGP 8 里它已经不是 project 属性了。
+def apkStamp = new Date().format('HHmm')
+def appVersionName = android.defaultConfig.versionName ?: '0'
+def FINAL_NAME = "yuanfang-music_V${appVersionName}.apk"
+def DEBUG_NAME = "yuanfang-music_${apkStamp}.apk"
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def fileName = (variant.buildType == 'release') ? FINAL_NAME : DEBUG_NAME
+        variant.outputs.forEach { output ->
+            output.outputFileName.set(fileName)
+        }
+    }
 }
 
 apply from: 'capacitor.build.gradle'

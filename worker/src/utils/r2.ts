@@ -62,6 +62,8 @@ export function getContentType(key: string): string {
   if (key.endsWith('.png')) return 'image/png'
   if (key.endsWith('.jpg') || key.endsWith('.jpeg')) return 'image/jpeg'
   if (key.endsWith('.svg')) return 'image/svg+xml'
+  // 客户端更新下载用：给对 MIME，浏览器才认得出这是可安装的包
+  if (key.endsWith('.apk')) return 'application/vnd.android.package-archive'
   return 'application/octet-stream'
 }
 

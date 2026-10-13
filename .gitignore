@@ -43,3 +43,8 @@ worker/dist/
 cover-original.jpg
 shop-logo-original.png
 check/
+
+# Android 发布签名：密钥与口令，**绝不入库**
+android/keystore.properties
+android/*.jks
+android/*.keystore
