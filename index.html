@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover 是安全区适配的前提：
+         不加它，env(safe-area-inset-*) 在刘海屏/挖孔屏上恒为 0，适配等于没做 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>远方音乐</title>
   </head>
   <body>

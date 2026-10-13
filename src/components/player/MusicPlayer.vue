@@ -4,7 +4,56 @@ import { usePlayerStore } from '@/stores/player'
 import APlayer from 'aplayer'
 import 'aplayer/dist/APlayer.min.css'
 import Hls from 'hls.js'
+import { registerPlugin } from '@capacitor/core'
 import type { PlayMode } from '@/types'
+
+// ===== 安卓壳：后台播放不中断 =====
+
+/** 本地插件（android/app/src/main/java/.../PlaybackPlugin.java），无需 npm 安装 */
+interface PlaybackForegroundPlugin {
+  start(): Promise<{ ok?: boolean; note?: string }>
+  stop(): Promise<void>
+}
+const PlaybackForeground = registerPlugin<PlaybackForegroundPlugin>('PlaybackForeground')
+
+/**
+ * 让 App 进入 / 退出「前台态」。
+ *
+ * 为什么需要：App 退到后台后，音频本身还能继续播（媒体管线在浏览器进程里），
+ * 但**安卓会冻结 WebView 的 JS 执行** —— 而「一首放完自动切下一首」是靠 JS
+ * 处理 audio 的 ended 事件完成的，JS 冻住就永远不切（表现为"后台只能播一首"）。
+ * 前台服务把进程钉在前台态，JS 才继续跑。
+ *
+ * 浏览器里 isNativePlatform() 为 false，直接跳过，**网页完全不受影响**。
+ */
+function setForegroundPlaying(on: boolean) {
+  // ⚠️ 这里**刻意不用** `if (!Capacitor.isNativePlatform()) return` 预判。
+  //
+  // 壳子模式（server.url 加载远程页面）下 isNativePlatform() 会返回 false，
+  // 那一行会让整条原生路径被静默跳过 —— 插件没被调用、前台服务没起、
+  // 原生 playing 标志没置位、onPause 没跳过 super、WebView 被暂停……
+  // 症状就是「通知栏空白 + 后台一首放完不切歌」，两个问题同一个根因。
+  //
+  // 改成直接调：浏览器里插件不存在，promise 会 reject，按下面的规则安静处理。
+  const p = on ? PlaybackForeground.start() : PlaybackForeground.stop()
+
+  p.then((r) => {
+    if (!on) {
+      playerStore.foregroundNote = '已停止（未在播放）'
+      return
+    }
+    // 这一行是"通知栏为什么是空的"唯一线索，别吞
+    playerStore.foregroundNote = r?.ok
+      ? '前台服务已启动，通知栏应有常驻通知'
+      : `前台服务启动失败：${r?.note ?? '未知原因'}`
+  }).catch((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e)
+    // 纯网页里必然是这个错（插件没实现），不该当成问题展示给用户
+    if (!/not implemented|not available|not found/i.test(msg)) {
+      playerStore.foregroundNote = `插件调用失败：${msg}`
+    }
+  })
+}
 
 // APlayer 内部通过全局 `Hls` 变量引用 hls.js，需要显式挂载
 ;(window as any).Hls = Hls
@@ -46,6 +95,57 @@ function getAudioElement(): HTMLAudioElement | null {
   return playerContainer.value.querySelector('audio')
 }
 
+// ===== 锁屏 / 通知栏媒体控制（Media Session API）=====
+//
+// 纯 Web API，浏览器和安卓壳同时受益：
+//   网页端 —— 手机浏览器锁屏、系统媒体中心能看到歌名歌手并能控制上一首/下一首/暂停
+//   安卓壳 —— Capacitor 的 WebView 走同一套，直接接进系统媒体通知
+//
+// 所以这一步**不依赖 Capacitor**，是整条 APK 路线里性价比最高的一步。
+
+/** 把当前曲目与播放状态同步给系统媒体中心 */
+function syncMediaSession() {
+  if (!('mediaSession' in navigator)) return
+
+  const track = playerStore.currentTrack
+  if (!track) {
+    navigator.mediaSession.metadata = null
+    return
+  }
+
+  // artwork 必须是**绝对 URL** —— 封面是相对路径（R2 没封面时用 /PIC/disc-default.jpg），
+  // 直接传相对路径系统取不到图
+  const cover = new URL(track.cover || '/PIC/disc-default.jpg', location.origin).href
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.title,
+    artist: track.artist,
+    album: track.album || track.folder || '',
+    artwork: [{ src: cover, sizes: '320x320', type: 'image/jpeg' }]
+  })
+  navigator.mediaSession.playbackState = playerStore.isPlaying ? 'playing' : 'paused'
+}
+
+/** 注册锁屏上的那几个控制按钮 */
+function initMediaSession() {
+  if (!('mediaSession' in navigator)) return
+  const ms = navigator.mediaSession
+
+  // store 只有 togglePlay()，所以这里各自加个状态判断，
+  // 免得系统发 play 时我们反而把正在播的暂停了
+  ms.setActionHandler('play', () => {
+    if (!playerStore.isPlaying) playerStore.togglePlay()
+  })
+  ms.setActionHandler('pause', () => {
+    if (playerStore.isPlaying) playerStore.togglePlay()
+  })
+  ms.setActionHandler('previoustrack', () => playerStore.prev())
+  ms.setActionHandler('nexttrack', () => playerStore.next())
+  ms.setActionHandler('seekto', (d: MediaSessionActionDetails) => {
+    if (typeof d.seekTime === 'number') playerStore.seek(d.seekTime)
+  })
+}
+
 // ===== 生命周期 =====
 
 let ap: any = null
@@ -63,12 +163,19 @@ onMounted(() => {
 
   // ─── APlayer → Store（同步播放器状态到 Store）───
 
-  ap.on('play', () => { playerStore.isPlaying = true })
+  ap.on('play', () => {
+    playerStore.isPlaying = true
+    syncMediaSession()
+    setForegroundPlaying(true)
+  })
 
   ap.on('pause', () => {
     // 队列重建或 next/prev 切换期间忽略 pause，防止闪烁
+    // （切歌时不能退出前台态，否则下一首刚开始 JS 就被冻住）
     if (_ignorePause || playerStore.ignorePause) return
     playerStore.isPlaying = false
+    syncMediaSession()
+    setForegroundPlaying(false)
   })
 
   ap.on('timeupdate', () => {
@@ -101,6 +208,8 @@ onMounted(() => {
     }
     // APlayer 没有倍速 API，切歌后得把当前倍速重新贴到 audio 上
     if (ap?.audio) ap.audio.playbackRate = playerStore.playbackRate
+    // 切歌后同步媒体中心 —— 索引刚更新过，这里读到的是新曲目
+    syncMediaSession()
     nextTick(() => {
       // 自动播放（处理 next/prev 场景：切换后继续播放）
       setTimeout(() => {
@@ -135,6 +244,8 @@ onMounted(() => {
       playerStore.muted = ap.audio.muted
     }
   })
+
+  initMediaSession()
 })
 
 // ─── Store → APlayer（响应 Store 变化控制播放器）───

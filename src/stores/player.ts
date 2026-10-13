@@ -34,6 +34,13 @@ export const usePlayerStore = defineStore('player', () => {
   /** 歌词行（APlayer 解析 lrc 后同步过来） */
   const lyricLines = ref<{ time: number; text: string }[]>([])
 
+  /**
+   * 安卓壳里「后台播放前台服务」的状态文案。
+   * 纯诊断用：服务起不来时通知栏是空的，没有这行提示就分不清
+   * 「功能没生效」还是「起来了但通知不显眼」。浏览器里恒为空。
+   */
+  const foregroundNote = ref('')
+
   // ===== Getters =====
 
   /** 当前播放曲目 */
@@ -222,6 +229,7 @@ export const usePlayerStore = defineStore('player', () => {
     ignorePause,
     playbackRate,
     lyricLines,
+    foregroundNote,
     // Getters
     currentTrack,
     queueLength,

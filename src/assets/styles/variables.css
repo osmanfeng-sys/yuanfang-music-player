@@ -60,6 +60,15 @@
   --topbar-height: 56px;
   --playerbar-height: 88px;
   --page-gutter: 20px;
+
+  /* ===== 安全区（刘海屏 / 挖孔屏 / 手势条）=====
+     浏览器里取不到就是 0，**不影响网页**，所以可以无条件先加上；
+     只有装了安卓壳（或 iOS 刘海屏浏览器）才真正起作用。
+     前提是 index.html 的 viewport meta 带 viewport-fit=cover。 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 /* 移动端底栏改成三行（曲目 / 进度 / 控制），高度必须同步调高 ——

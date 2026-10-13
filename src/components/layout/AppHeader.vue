@@ -194,7 +194,10 @@ function logout() {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--topbar-height);
+  /* 高度把安全区加进来，再用 padding-top 把内容压回视觉 56px ——
+     直接给 height 不动 padding 的话，刘海屏上图标会顶进状态栏 */
+  height: calc(var(--topbar-height) + var(--safe-top));
+  padding-top: var(--safe-top);
   display: flex;
   align-items: center;
   gap: var(--spacing-md);

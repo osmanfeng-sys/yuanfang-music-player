@@ -265,7 +265,8 @@ function skip(seconds: number) {
 <style scoped>
 .footer {
   position: fixed;
-  bottom: 12px;
+  /* 加安全区：全面屏手势条会压住底栏（浏览器里 safe-bottom 是 0，无影响） */
+  bottom: calc(12px + var(--safe-bottom));
   left: var(--page-gutter);
   right: var(--page-gutter);
   height: var(--playerbar-height);

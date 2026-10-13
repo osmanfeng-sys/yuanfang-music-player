@@ -23,7 +23,7 @@ const userStore = useUserStore()
 const loading = computed(() => playlistStore.loading)
 const error = computed(() => playlistStore.error)
 
-/** 主菜单：正在播放 / 播放列表 / 歌曲搜索 */
+/** 主菜单：正在播放 / 乐库 / 搜索 */
 const activeTab = ref<'playing' | 'playlist' | 'search'>('playing')
 
 /** 播放列表二级：当前打开的音乐夹 */
@@ -279,12 +279,15 @@ watch(
           class="home__tab"
           :class="{ 'home__tab--active': activeTab === 'playlist' }"
           @click="activeTab = 'playlist'"
-        >播放乐库</span>
+        >乐库</span>
         <span
           class="home__tab"
           :class="{ 'home__tab--active': activeTab === 'search' }"
           @click="activeTab = 'search'"
-        >歌曲搜索</span>
+        >搜索</span>
+
+        <!-- 歌单入口：桌面端顶栏导航已有，移动端顶栏那块被隐藏了，所以在这里补一个 -->
+        <router-link to="/playlists" class="home__tab home__tab--nav">歌单</router-link>
 
         <span class="home__bar-spacer" />
 
@@ -568,13 +571,19 @@ watch(
         <div class="home__modal-body">
           <p><b>远方音乐播放器</b> — 基于 HLS 流媒体的在线音乐库。</p>
           <p><b>正在播放</b>：显示当前播放队列，点击任意曲目直接切歌。</p>
-          <p><b>播放乐库</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。只有直接放在存储桶根目录、不属于任何音乐夹的曲目才归为「未分类」。</p>
-          <p><b>歌曲搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
+          <p><b>乐库</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。只有直接放在存储桶根目录、不属于任何音乐夹的曲目才归为「未分类」。</p>
+          <p><b>搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
           <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
           <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
           <p><b>自动播放</b>：首次进入会用曲目最多的艺人歌单填充队列并尝试播放；若浏览器拦截了自动播放，点一下播放键即可。</p>
           <p><b>快捷键</b>：拖动底部进度条可跳转，音量条直接拖动调节；上下首、循环/单曲/随机在底部控制条。</p>
-          <p class="home__modal-note">音频来自 Cloudflare R2，按需切片（HLS），首次播放会有短暂缓冲。</p>
+          <!-- 安卓壳后台播放的诊断信息：服务起不来时通知栏是空的，
+               没有这行就分不清「功能没生效」还是「起来了但通知不显眼」。
+               浏览器里恒为空、不显示。 -->
+          <p v-if="playerStore.foregroundNote" class="home__modal-note">
+            后台播放：{{ playerStore.foregroundNote }}
+          </p>
+          <p class="home__modal-note">音频来自 Cloudflare R2（mp3 直传，支持拖动进度），首次播放会有短暂缓冲。</p>
         </div>
       </div>
     </div>
@@ -637,6 +646,11 @@ watch(
 
 .home__tab--active {
   background: var(--accent);
+}
+
+/* 歌单入口：只在移动端出现（桌面端顶栏导航里已经有了，不重复放两个） */
+.home__tab--nav {
+  display: none;
 }
 
 .home__bar-spacer {
@@ -1208,6 +1222,12 @@ watch(
     display: flex;
   }
 
+  /* 移动端顶栏导航被隐藏了，把「歌单」补到选项卡右边。
+     同时选项卡要瘦身 —— 从 3 个变 4 个，不缩小就会挤爆行宽 */
+  .home__tab--nav {
+    display: inline-block;
+  }
+
   .home__row-album {
     display: none;
   }
@@ -1220,19 +1240,20 @@ watch(
   .home__row-artist {
     display: none;
   }
-  /* 顶栏要挤下 3 个页签 + 4 个按钮 + 倍速，窄屏收紧间距免得溢出换行 */
+  /* 窄屏要挤下 4 个页签（正在播放/乐库/搜索/歌单）+ 4 个按钮 + 倍速。
+     360px 宽的机器上：页签约 140 + 按钮 96 + 倍速 44 + 间距 24 ≈ 304px，放得下 */
   .home__bar {
-    --rate-w: 48px;
-    gap: 3px;
+    --rate-w: 44px;
+    gap: 2px;
     padding: 0 6px;
   }
   .home__tab {
-    padding: 4px 8px;
-    font-size: 11px;
+    padding: 3px 5px;
+    font-size: 10px;
   }
   .home__icon-btn {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     margin-left: 2px;
   }
   /* 必须排在 .home__icon-btn 之后：同优先级，靠源序把 24px 覆盖回浮层宽度 */

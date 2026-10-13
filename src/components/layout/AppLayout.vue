@@ -96,13 +96,14 @@ const showCover = computed(() => userStore.bgMode === 'cover' && !!coverUrl.valu
   background: rgba(0, 0, 0, 0.35);
 }
 
-/* 内容区：顶栏与底栏之间 */
+/* 内容区：顶栏与底栏之间。加上安全区 —— 否则刘海屏上会被状态栏盖住，
+   手势条机型上底栏会被系统手势区压住（浏览器里 safe-* 是 0，无影响） */
 .layout__content {
   position: absolute;
-  top: calc(var(--topbar-height) + 8px);
-  left: var(--page-gutter);
-  right: var(--page-gutter);
-  bottom: calc(var(--playerbar-height) + 12px);
+  top: calc(var(--topbar-height) + 8px + var(--safe-top));
+  left: calc(var(--page-gutter) + var(--safe-left));
+  right: calc(var(--page-gutter) + var(--safe-right));
+  bottom: calc(var(--playerbar-height) + 12px + var(--safe-bottom));
   z-index: 2;
   overflow: hidden;
 }
