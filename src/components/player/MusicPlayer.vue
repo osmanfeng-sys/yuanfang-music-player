@@ -5,7 +5,7 @@ import APlayer from 'aplayer'
 import 'aplayer/dist/APlayer.min.css'
 import Hls from 'hls.js'
 import { registerPlugin } from '@capacitor/core'
-import type { PlayMode } from '@/types'
+import type { PlayMode, Track } from '@/types'
 
 // ===== 安卓壳：后台播放不中断 =====
 
@@ -20,6 +20,10 @@ interface PlaybackForegroundPlugin {
     artist: string
     album: string
     playing: boolean
+    /** 封面，**绝对 URL**（原生要下载它，相对路径下不了） */
+    cover: string
+    /** 当前歌词行。空串 = 没歌词，原生那边会落回显示歌手 */
+    lyric: string
   }): Promise<void>
 }
 const PlaybackForeground = registerPlugin<PlaybackForegroundPlugin>('PlaybackForeground')
@@ -112,6 +116,51 @@ function getAudioElement(): HTMLAudioElement | null {
 // 所以这一步**不依赖 Capacitor**，是整条 APK 路线里性价比最高的一步。
 
 /**
+ * 封面地址。
+ *
+ * ⚠️ 必须是**绝对 URL** —— 相对路径系统取不到图，原生侧也下载不了。
+ *
+ * ⚠️ 用的是**锁屏专用**封面 /PIC/cover.jpg（640×640 / 94 KB），
+ *    和 App 界面里那张转盘图 /PIC/disc-default.jpg 是**两张不同的图**，别混：
+ *    HomeView 的转盘仍走 disc-default，本文件只负责系统媒体中心那张。
+ */
+function coverUrlOf(track: Track): string {
+  return new URL(track.cover || '/PIC/cover.jpg', location.origin).href
+}
+
+/**
+ * 把曲目 / 封面 / 歌词 / 播放状态推给原生 —— 锁屏与通知栏媒体卡片的数据源。
+ *
+ * 单独抽出来是因为**歌词行每几秒就换一次**：那条路只需要重推这一份，
+ * 不必连带把浏览器侧的 mediaSession 也重建一遍。
+ */
+function pushNowPlaying() {
+  const track = playerStore.currentTrack
+  if (!track) return
+
+  // 当前歌词行（-1 / 越界时是 undefined，安全）
+  const line = playerStore.lyricLines[playerStore.lyricIndex]
+
+  // 诊断：把"这一句到底有没有推出去"摆到 ⓘ 里。
+  // 之前"锁屏没歌词"分不清两种情况 —— 三星不认那个字段，还是数据压根没送到原生。
+  // 有这一行，下次测试就能直接定性，而不是再赌一轮。
+  playerStore.foregroundNote = line
+    ? `锁屏歌词：第 ${playerStore.lyricIndex + 1}/${playerStore.lyricLines.length} 行「${line.text}」`
+    : `锁屏歌词：无（本首歌词数据 ${playerStore.lyricLines.length} 行）`
+
+  PlaybackForeground.updateNowPlaying({
+    title: track.title,
+    artist: track.artist,
+    album: track.album || track.folder || '',
+    playing: playerStore.isPlaying,
+    cover: coverUrlOf(track),
+    lyric: line?.text ?? ''
+  }).catch(() => {
+    // 纯浏览器里插件不存在，必然 reject —— 这是预期，安静吞掉
+  })
+}
+
+/**
  * 把当前曲目与播放状态同步给系统媒体中心。
  *
  * ⚠️ 这里有**两条独立的路**，别并成一条：
@@ -121,41 +170,30 @@ function getAudioElement(): HTMLAudioElement | null {
  *   ② 手机 / 桌面浏览器 —— 走 navigator.mediaSession，浏览器自己接进系统媒体中心。
  */
 function syncMediaSession() {
-  const track = playerStore.currentTrack
-  const playing = playerStore.isPlaying
-
   // ① 原生侧。放在最前，且**不受下面 mediaSession 可用性影响** ——
   //    两条路服务的是不同目标，不该因为浏览器不支持 mediaSession 就连带掐掉原生那条。
-  if (track) {
-    PlaybackForeground.updateNowPlaying({
-      title: track.title,
-      artist: track.artist,
-      album: track.album || track.folder || '',
-      playing
-    }).catch(() => {
-      // 纯浏览器里插件不存在，必然 reject —— 这是预期，安静吞掉
-    })
-  }
+  pushNowPlaying()
 
   // ② 网页侧
   if (!('mediaSession' in navigator)) return
+  const track = playerStore.currentTrack
   if (!track) {
     navigator.mediaSession.metadata = null
     return
   }
 
-  // artwork 必须是**绝对 URL** —— 封面是相对路径（R2 没封面时用 /PIC/disc-default.jpg），
-  // 直接传相对路径系统取不到图
-  const cover = new URL(track.cover || '/PIC/disc-default.jpg', location.origin).href
-
   navigator.mediaSession.metadata = new MediaMetadata({
     title: track.title,
     artist: track.artist,
     album: track.album || track.folder || '',
-    artwork: [{ src: cover, sizes: '320x320', type: 'image/jpeg' }]
+    artwork: [{ src: coverUrlOf(track), sizes: '640x640', type: 'image/jpeg' }]
   })
-  navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+  navigator.mediaSession.playbackState = playerStore.isPlaying ? 'playing' : 'paused'
 }
+
+// 歌词行进到下一句 → 只重推原生那份（锁屏卡片第二行显示的就是它）。
+// lyricIndex 由 currentTime 算出，watch 只在**行真的变了**时触发，不会跟着 timeupdate 抖。
+watch(() => playerStore.lyricIndex, () => pushNowPlaying())
 
 /** 注册锁屏上的那几个控制按钮 */
 function initMediaSession() {

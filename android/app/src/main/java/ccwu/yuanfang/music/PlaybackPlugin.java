@@ -92,8 +92,13 @@ public class PlaybackPlugin extends Plugin {
         String title = call.getString("title", "");
         String artist = call.getString("artist", "");
         Boolean playing = call.getBoolean("playing", Boolean.TRUE);
+        // 封面必须是**绝对 URL**（前端用 location.origin 拼好的）——
+        // 相对路径原生这边下载不了
+        String cover = call.getString("cover", "");
+        // 当前歌词行。空串 = 没有歌词，原生侧会落回显示歌手
+        String lyric = call.getString("lyric", "");
 
-        PlaybackService.updateNowPlaying(title, artist, playing == null || playing);
+        PlaybackService.updateNowPlaying(title, artist, playing == null || playing, cover, lyric);
         call.resolve();
     }
 

@@ -28,6 +28,20 @@ const syncPass = ref('')
 const fingerprint = ref('')
 const syncError = ref('')
 
+/**
+ * 背景模式选项。从主页顶栏那个小齿轮搬过来的 —— 只搬入口。
+ *
+ * ⚠️ 渲染那一侧**没动**，所以现在只有「默认壁纸」真正看得出效果：
+ *    见 AppLayout.vue 的 showWallpaper / showCover —— 没有 black 对应的层，
+ *    而 cover 依赖 track.cover，R2 里又没有封面资源。
+ *    用户明确要求「保留接口、不做功能」，所以这里先把入口留着。
+ */
+const BG_MODES: { key: 'wallpaper' | 'cover' | 'black'; label: string }[] = [
+  { key: 'wallpaper', label: '默认壁纸' },
+  { key: 'cover', label: '封面模糊' },
+  { key: 'black', label: '纯黑' }
+]
+
 onMounted(async () => {
   const c = loadCredentials()
   if (!c) return
@@ -110,6 +124,28 @@ function clearAllData() {
     </section>
 
     <section class="settings__section">
+      <h2 class="settings__section-title">外观</h2>
+      <div class="settings__row">
+        <span>背景</span>
+        <span class="settings__actions">
+          <button
+            v-for="m in BG_MODES"
+            :key="m.key"
+            class="settings__btn"
+            :class="{ 'settings__btn--on': userStore.bgMode === m.key }"
+            @click="userStore.setBgMode(m.key)"
+          >{{ m.label }}</button>
+        </span>
+      </div>
+      <p class="settings__hint">
+        ⚠️ 这一项<b>还没做完</b>，目前只有「默认壁纸」真正生效：<br />
+        「封面模糊」需要曲目自带封面，而 R2 里没有封面资源；
+        「纯黑」在布局组件里还没有对应的背景层。<br />
+        从主页顶栏搬过来时按你的要求只保留入口、不做功能。
+      </p>
+    </section>
+
+    <section class="settings__section">
       <h2 class="settings__section-title">歌单同步</h2>
       <p class="settings__hint">
         设一组「用户 ID + 密码」，歌单就会存到云端并归属这个身份；换设备输入同样的
@@ -171,7 +207,7 @@ function clearAllData() {
     </section>
 
     <section class="settings__section settings__section--about">
-      <p class="settings__version">远方音乐 v2.0.0</p>
+      <p class="settings__version">远方音乐 v1.1</p>
       <p class="settings__copyright">基于 Vue 3 + Cloudflare 构建</p>
     </section>
   </main>
@@ -350,6 +386,12 @@ function clearAllData() {
 .settings__btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* 当前选中的那一项（外观 → 背景） */
+.settings__btn--on {
+  color: var(--text-primary);
+  background: var(--accent);
 }
 
 .settings__btn--danger {

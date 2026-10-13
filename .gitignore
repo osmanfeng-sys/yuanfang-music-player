@@ -37,3 +37,9 @@ build/
 
 # Worker 构建产物（TS 重构后）
 worker/dist/
+
+# 设计源图 / 参考素材（只在本地做图用，既不入库也不随部署上传）。
+# 真正要发布的成品在 public/ 下，例如 public/PIC/cover.jpg、public/ICO/shop-icon.png。
+cover-original.jpg
+shop-logo-original.png
+check/

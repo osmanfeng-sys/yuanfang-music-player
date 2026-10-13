@@ -7,13 +7,21 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import com.getcapacitor.Bridge;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /**
  * 媒体播放前台服务 —— 干两件事：把进程钉在前台态（后台不冻结 JS），
@@ -52,6 +60,24 @@ public class PlaybackService extends Service {
     private String artist = "";
     private boolean playingNow = true;
 
+    /**
+     * 封面。artUrl 记住当前这张图对应哪个地址，用来避免反复重下 ——
+     * 现在全库共用一张默认图，URL 不变就**一次都不会重下**。
+     * 两个字段跨线程读写（下载线程 / 主线程），所以要 volatile。
+     */
+    private volatile String artUrl = null;
+    private volatile Bitmap artBitmap = null;
+
+    /**
+     * 当前歌词行。放 METADATA_KEY_DISPLAY_SUBTITLE —— 那是媒体卡片**第二行**的取值，
+     * 不设时系统退回显示 METADATA_KEY_ARTIST。所以没有歌词时给空串即可，
+     * 界面自然回到显示歌手，不需要额外分支。
+     *
+     * ⚠️ METADATA_KEY_ARTIST 始终保留真歌手，不动 —— 蓝牙/车机（AVRCP）读的是它，
+     * 锁屏第二行让给歌词不会影响那边。
+     */
+    private volatile String lyric = "";
+
     /** 活跃的媒体会话，见类注释 */
     private MediaSession session;
 
@@ -86,23 +112,64 @@ public class PlaybackService extends Service {
      * 服务没起来就安静忽略 —— 前端的 play 处理里是**先 start() 再 sync**，
      * 正常不会走到这条。真走到了也没什么可更新的（没有会话、没有通知）。
      */
-    public static void updateNowPlaying(String title, String artist, boolean playing) {
+    public static void updateNowPlaying(
+            String title, String artist, boolean playing, String coverUrl, String lyricLine) {
         PlaybackService s = instance;
         if (s == null) return;
-        s.applyNowPlaying(title, artist, playing);
+        s.applyNowPlaying(title, artist, playing, coverUrl, lyricLine);
     }
 
-    private void applyNowPlaying(String t, String a, boolean playing) {
+    private void applyNowPlaying(String t, String a, boolean playing, String coverUrl, String lyricLine) {
         title = t == null ? "" : t;
         artist = a == null ? "" : a;
         playingNow = playing;
+        lyric = lyricLine == null ? "" : lyricLine;
 
+        // 封面：地址没变就复用缓存。换歌时地址若变了，先把旧图清掉
+        // —— 否则新歌会配着上一首的封面显示，比没有封面更糟。
+        boolean changed = coverUrl == null ? artUrl != null : !coverUrl.equals(artUrl);
+        if (changed) {
+            artUrl = coverUrl;
+            artBitmap = null;
+            if (coverUrl != null && !coverUrl.isEmpty()) {
+                downloadArt(coverUrl);
+            }
+        }
+
+        publish();
+    }
+
+    /**
+     * 把当前的 曲目 / 封面 / 播放状态 推给媒体会话与通知。
+     *
+     * setMetadata 与 notify 都是线程安全的，从任意线程调都行 ——
+     * 下载线程拿到图之后也是调它。
+     */
+    private void publish() {
         if (session != null) {
-            session.setMetadata(new MediaMetadata.Builder()
+            MediaMetadata.Builder md = new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                    .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                    // ⚠️ 这是**妥协**，不是最优解。
+                    //
+                    // 三星锁屏的媒体卡片只渲染两行：歌名 + 这个键。实测它**不认**
+                    // DISPLAY_SUBTITLE（官方文档说 getSubtitle() 会优先取它，
+                    // 但三星自己读的就是 ARTIST），所以想让歌词上锁屏，
+                    // 只能占用这两行里的一行 —— 歌名不能让，那就只能是第二行。
+                    //
+                    // 代价：蓝牙 / 车机（AVRCP）读的也是 ARTIST，
+                    // 那边"歌手"位置同样会变成歌词。真歌手退到 ALBUM / DESCRIPTION。
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, displayLine())
+                    .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, displayLine())
+                    // 第三行（部分 UI 才显示）：把真歌手放这儿，能显示就显示
                     .putString(MediaMetadata.METADATA_KEY_ALBUM, artist)
-                    .build());
+                    .putString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, artist);
+            if (artBitmap != null) {
+                // 两个键都塞：锁屏大图取 ART，媒体卡片/通知取 ALBUM_ART，
+                // 各家 UI 取哪个都能显示，省得适配
+                md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBitmap);
+                md.putBitmap(MediaMetadata.METADATA_KEY_ART, artBitmap);
+            }
+            session.setMetadata(md.build());
             // 暂停时状态要跟着变，否则锁屏上的按钮一直是"暂停"图标
             session.setPlaybackState(buildPlaybackState());
         }
@@ -113,6 +180,43 @@ public class PlaybackService extends Service {
             // 同一个 NOTIFY_ID —— 原地替换，不会堆出第二条
             nm.notify(NOTIFY_ID, buildNotification());
         }
+    }
+
+    /**
+     * 后台下载封面。
+     *
+     * 用平台的 HttpURLConnection + BitmapFactory，**零依赖**。
+     * 必须开线程 —— 主线程做网络会直接抛 NetworkOnMainThreadException。
+     *
+     * 失败（断网 / 解码不了 / 地址错）就静默降级：不设图、不崩，
+     * 锁屏退回"只有文字"，功能不受影响。
+     */
+    private void downloadArt(final String url) {
+        new Thread(() -> {
+            Bitmap bmp = null;
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.setDoInput(true);
+                try (InputStream in = conn.getInputStream()) {
+                    bmp = BitmapFactory.decodeStream(in);
+                }
+                conn.disconnect();
+            } catch (Throwable ignored) {
+                // 网络/解码失败都走这里
+            }
+            if (bmp == null) return;
+
+            final Bitmap decoded = bmp;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                // 下载这段时间里可能已经换歌了 —— 地址对不上就丢掉这次结果，
+                // 否则会把上一首的封面盖到新歌上
+                if (!url.equals(artUrl)) return;
+                artBitmap = decoded;
+                publish();
+            });
+        }, "ym-art").start();
     }
 
     @Override
@@ -164,6 +268,13 @@ public class PlaybackService extends Service {
 
         session.setPlaybackState(buildPlaybackState());
         session.setActive(true);
+    }
+
+    /**
+     * 媒体卡片第二行要显示的内容：有歌词就是当前歌词行，否则回落到歌手。
+     */
+    private String displayLine() {
+        return lyric.isEmpty() ? artist : lyric;
     }
 
     /**
@@ -279,8 +390,9 @@ public class PlaybackService extends Service {
         }
 
         return b.setContentTitle(title.isEmpty() ? "远方音乐" : title)
-                .setContentText(artist.isEmpty() ? "正在播放" : artist)
+                .setContentText(displayLine().isEmpty() ? "正在播放" : displayLine())
                 .setSmallIcon(getApplicationInfo().icon)
+                .setLargeIcon(artBitmap)   // 下拉通知栏里也带封面；null 时系统自己处理
                 .setContentIntent(pi)
                 .setStyle(style)
                 // 不加这个，安全锁屏上会显示成"内容已隐藏"

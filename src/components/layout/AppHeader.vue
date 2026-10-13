@@ -101,8 +101,15 @@ function logout() {
           <circle cx="16" cy="16" r="14" fill="var(--color-primary)" />
           <path d="M11 22V10l12 6-12 6z" fill="#fff" />
         </svg>
-        <span class="header__title">远方音乐</span>
-        <span class="header__handle">@AI涛哥</span>
+        <span class="header__brand">
+          <span class="header__brand-top">
+            <span class="header__title">远方音乐</span>
+            <span class="header__handle">@AI涛哥</span>
+          </span>
+          <!-- 未登录（含首次安装）时提示去登录。loggedIn 由凭据派生，
+               登录后这一行自动消失，不需要额外的状态。 -->
+          <span v-if="!loggedIn" class="header__hint">未登录，点击头像登录同步歌单</span>
+        </span>
       </router-link>
 
       <nav class="header__nav">
@@ -194,6 +201,13 @@ function logout() {
   top: 0;
   left: 0;
   right: 0;
+  /* 下移量 --header-drop 定义在 variables.css 的 :root ——
+     因为 HomeView 里的浮层也要按顶栏的真实下沿（--header-bottom）排，
+     那几个值必须放在两边都能继承到的公共祖先上。
+     用 transform 而不是 padding/margin：只挪视觉位置、不参与布局，
+     栏高、安全区、以及和下方内容区的间距都不受影响。
+     已确认本栏内没有 position: fixed 的子元素，加 transform 不会改变它们的定位基准。 */
+  transform: translateY(var(--header-drop));
   /* 高度把安全区加进来，再用 padding-top 把内容压回视觉 56px ——
      直接给 height 不动 padding 的话，刘海屏上图标会顶进状态栏 */
   height: calc(var(--topbar-height) + var(--safe-top));
@@ -221,7 +235,7 @@ function logout() {
 }
 
 .header__title {
-  font-size: 20px;
+  font-size: var(--brand-size);
   font-weight: 700;
   letter-spacing: 1px;
   color: rgba(255, 255, 255, 0.92);
@@ -233,12 +247,42 @@ function logout() {
    字体指定微软雅黑、颜色用紫色（在壁纸照片上仍需 drop-shadow 提可读性）。 */
 .header__handle {
   font-family: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
-  font-size: 13px;
+  font-size: var(--handle-size); /* 13px，与 .header 的下移量同源 */
   font-weight: 500;
   letter-spacing: 0.5px;
   color: #c084fc;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
   white-space: nowrap;
+}
+
+/* 标题 + 署名 + 未登录提示竖向叠放。
+   ⚠️ 不能直接往 .header__logo 里再塞一个 span —— 那是个横向 flex，
+      加进去会和「远方音乐 @AI涛哥」并排。要让提示落在文字**下方**，
+      就得先把标题那一行包成一个整体。 */
+.header__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.header__brand-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* 未登录提示：小号绿字 */
+.header__hint {
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.3px;
+  color: #4ade80; /* 绿色（与署名那个紫色 #c084fc 一样，这里也是硬编码） */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  white-space: nowrap;
+  /* 这里【不再】单独位移。
+     历史：曾经给它加过 translateY(1em) 往下挪一个字符高度；后来整组顶栏内容
+     统一用 .header 的 --header-drop（1.5 个「涛哥」字高）下移了，
+     这行的额外偏移就多余了 —— 现在上移一个字符高度 = 把这个 transform 撤掉。 */
 }
 
 .header__nav {

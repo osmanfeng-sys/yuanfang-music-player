@@ -69,6 +69,35 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+
+  /* ===== 顶栏几何：AppHeader 与「顶栏下方的浮层」共用 =====
+     ⚠️ 必须放在 :root。CSS 自定义属性只沿 DOM 继承，而 .header 与
+        HomeView 里的浮层是兄弟分支 —— 写在 .header 上那边读不到，
+        就会退化成各自写死一个像素值，迟早对不上。 */
+  /* 「远方音乐」标题字号 */
+  --brand-size: 20px;
+  /* 「@AI涛哥」署名字号，同时是顶栏下移量的单位 */
+  --handle-size: 13px;
+  /* 顶栏整组内容（标题 + 署名 + 两侧图标 + 未登录提示）下移的量。
+     为什么需要下移：滚动欢迎语 fixed 在 --topbar-height/2，和顶栏同处一条中线，
+     窄屏上会压住「远方音乐 @AI涛哥」。下移 1.5 个「涛哥」字符高度把两者分开。 */
+  --header-drop: calc(1.5 * var(--handle-size));
+  /* 顶栏内容的一半高度（标题行 ≈ 24px + 未登录提示 ≈ 12px + 1px 间隙，取 19px） */
+  --header-content-half: 19px;
+  /* ⚠️ .header 实际生效的 padding-top —— 现在是 0，**不是** --safe-top。
+     原因：AppHeader.vue 里写的是
+         padding-top: var(--safe-top);
+         padding: 0 var(--page-gutter);     ← 这行简写把它重置成 0 了
+     所以顶栏内容其实是在「--topbar-height + 安全区」整个框里居中的，
+     而不是被压到安全区下方。这里把它显式参数化，而不是把 bug 藏进公式里：
+     哪天把上面那两行调个顺序修好了，只要把这里改成 var(--safe-top)，
+     --header-bottom 会自动跟上，不用再去 HomeView 手调歌词浮层。 */
+  --header-pad-top: 0px;
+  /* 顶栏内容的**真实下沿** —— 顶栏下方的浮层要按它往下排。
+     不能直接用 --topbar-height：内容是在「--topbar-height + 安全区」这个框里
+     垂直居中的，再叠上 --header-drop，实际下沿比 --topbar-height 低不少
+     （带状态栏的机器上差 20px 上下）。改动上面任一 token，这里自动跟着走。 */
+  --header-bottom: calc(var(--header-pad-top) / 2 + (var(--topbar-height) + var(--safe-top)) / 2 + var(--header-content-half) + var(--header-drop));
 }
 
 /* 移动端底栏改成三行（曲目 / 进度 / 控制），高度必须同步调高 ——

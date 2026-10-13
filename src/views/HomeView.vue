@@ -40,24 +40,25 @@ const keyword = ref('')
 
 /** 弹层 */
 const showInfo = ref(false)
-const showBgPanel = ref(false)
 const showRatePanel = ref(false)
 
 /** 移动端歌词面板（≤900px 时右侧面板收成全屏浮层，由这个开关控制） */
 const showMobileLyrics = ref(false)
 
-/** 播客地址 */
-const PODCAST_URL = 'https://yuanfangselect.ccwu.cc/'
+/** 欢迎语里显示的名字：登录了显示 ID，没登录显示「嘉宾」 */
+const welcomeName = computed(() => currentUserId.value || '嘉宾')
+
+/**
+ * OpenShop 商店地址。
+ *
+ * ⚠️ 这个常量原来叫 PODCAST_URL、按钮 title 写「播客地址」—— **是标错了名字**，
+ *    这个域名一直是 OpenShop 的店铺前台（同一个 Worker `yuanfangselect` 同时
+ *    提供前台与 /admin），跟播客没关系。2026-10-13 订正。
+ */
+const SHOP_URL = 'https://yuanfangselect.ccwu.cc/'
 
 /** 播放倍速选项 */
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
-
-/** 背景模式选项 */
-const BG_MODES: { key: 'wallpaper' | 'cover' | 'black'; label: string }[] = [
-  { key: 'wallpaper', label: '默认壁纸' },
-  { key: 'cover', label: '封面模糊' },
-  { key: 'black', label: '纯黑' }
-]
 
 async function loadMusic() {
   // 曲库已缓存就直接用：原来每次进入首页都重下 60KB 的 /list，
@@ -225,9 +226,9 @@ function setRate(r: number) {
   showRatePanel.value = false
 }
 
-function openPodcast() {
-  if (PODCAST_URL) window.open(PODCAST_URL, '_blank')
-  else window.alert('播客地址待定')
+function openShop() {
+  // 地址是常量、恒有值，原来那个「待定」分支已经没有意义，去掉
+  window.open(SHOP_URL, '_blank')
 }
 
 function toggleFolder(name: string) {
@@ -280,17 +281,18 @@ watch(
 
 <template>
   <main class="home">
-    <!-- 欢迎语：整页正中央浮层，未登录（currentUserId 为空）整行不渲染。
+    <!-- 欢迎语：整页正中央浮层。**无条件渲染** —— 未登录时显示「嘉宾」，
+         这样新装/未登录状态下也能看到这块动效，不至于像功能坏了。
          容器 pointer-events:none —— 浮在内容之上但不抢点击，
          否则正中间那几行曲目就点不动了。
          文字复制一份做无缝循环滚动（动画位移 -50% 正好等于一份的宽度）。 -->
-    <div v-if="currentUserId" class="home__welcome">
+    <div class="home__welcome">
       <div class="home__welcome-track">
         <span class="home__welcome-text">
-          欢迎 <b class="home__welcome-id">{{ currentUserId }}</b> 聆听
+          欢迎 <b class="home__welcome-id">{{ welcomeName }}</b> 聆听
         </span>
         <span class="home__welcome-text" aria-hidden="true">
-          欢迎 <b class="home__welcome-id">{{ currentUserId }}</b> 聆听
+          欢迎 <b class="home__welcome-id">{{ welcomeName }}</b> 聆听
         </span>
       </div>
     </div>
@@ -320,11 +322,10 @@ watch(
 
         <span class="home__bar-spacer" />
 
-        <button class="home__icon-btn" title="播客地址（待定）" @click="openPodcast">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <rect x="9" y="2" width="6" height="11" rx="3" />
-            <path d="M5 10a7 7 0 0014 0M12 17v4M8 21h8" />
-          </svg>
+        <!-- OpenShop 商店入口。图标是位图（OpenShop 的购物车），其余按钮都是
+             stroke SVG —— 位图按高度对齐即可，见 .home__icon-img -->
+        <button class="home__icon-btn" title="OpenShop" @click="openShop">
+          <img src="/ICO/shop-icon.png" alt="" class="home__icon-img" />
         </button>
 
         <button class="home__icon-btn" title="播放器说明" @click="showInfo = true">
@@ -334,17 +335,8 @@ watch(
           </svg>
         </button>
 
-        <button
-          class="home__icon-btn"
-          :class="{ 'home__icon-btn--on': showBgPanel }"
-          title="背景设置"
-          @click="showBgPanel = !showBgPanel; showRatePanel = false"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.68 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 3.68 1.65 1.65 0 0010 2.17V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.14.35.44.6.82.7H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-          </svg>
-        </button>
+        <!-- 背景设置那个小齿轮已移除：它一直没真正生效（详见设置页「外观」里的说明），
+             入口搬到设置页去了 -->
 
         <!-- 歌词面板开关：仅移动端显示（桌面端右侧面板常驻） -->
         <button
@@ -360,7 +352,7 @@ watch(
           class="home__icon-btn home__rate-btn"
           :class="{ 'home__icon-btn--on': showRatePanel }"
           title="播放速度"
-          @click="showRatePanel = !showRatePanel; showBgPanel = false"
+          @click="showRatePanel = !showRatePanel"
         >{{ playerStore.playbackRate }}x</button>
 
         <!-- 倍速浮层 -->
@@ -374,16 +366,6 @@ watch(
           >{{ r }} x</button>
         </div>
 
-        <!-- 背景设置浮层 -->
-        <div v-if="showBgPanel" class="home__bg-panel">
-          <button
-            v-for="m in BG_MODES"
-            :key="m.key"
-            class="home__bg-option"
-            :class="{ 'home__bg-option--on': userStore.bgMode === m.key }"
-            @click="userStore.setBgMode(m.key)"
-          >{{ m.label }}</button>
-        </div>
       </div>
 
       <!-- 内容区 -->
@@ -598,14 +580,17 @@ watch(
           <button class="home__icon-btn" @click="showInfo = false">✕</button>
         </div>
         <div class="home__modal-body">
-          <p><b>远方音乐播放器</b> — 基于 HLS 流媒体的在线音乐库。</p>
-          <p><b>正在播放</b>：显示当前播放队列，点击任意曲目直接切歌。</p>
-          <p><b>乐库</b>：按音乐夹（专辑目录）分组，点进去可看到该夹全部曲目；点击曲目即以该夹为队列开始播放。只有直接放在存储桶根目录、不属于任何音乐夹的曲目才归为「未分类」。</p>
-          <p><b>搜索</b>：按歌名或歌手名实时过滤整个音乐库。</p>
-          <p><b>播放速度</b>：右侧下拉菜单可切换 0.5x ~ 2.0x，适合听播客或跟唱练习。</p>
-          <p><b>背景设置</b>：齿轮按钮可切换「默认壁纸 / 封面模糊 / 纯黑」三种背景。</p>
+          <p><b>远方音乐播放器</b> — 自建在线音乐库，音频存放在 Cloudflare R2，按需拉取。</p>
+          <p><b>正在播放 / 乐库 / 搜索</b>：三个页签。<b>乐库</b>按音乐夹（R2 一级目录）分组，点进去看该夹全部曲目，点任意一首即以该夹为队列播放；只有直接放在存储桶根目录、不属于任何音乐夹的才归为「未分类」。<b>搜索</b>按歌名或歌手实时过滤全库。</p>
+          <p><b>歌单</b>：顶栏「歌单」进入。任意列表行末尾的心形按钮可以把歌加进歌单；歌单详情页的「从曲库添加」支持两级目录点选 + 多选。</p>
+          <p><b>歌单同步</b>：在「设置」里填一组自定的「用户 ID + 密码」，歌单就存到云端并归属这个身份，换设备填同样的 ID 和密码即可取回。没填时歌单只存在本机。</p>
+          <p><b>OpenShop</b>：右上角的购物车图标，打开配套的商店站点。</p>
+          <p><b>播放速度</b>：右上角可切 0.5x ~ 2.0x，适合跟唱练习。</p>
+          <p><b>歌词</b>：按歌名 + 歌手自动在线匹配，歌词面板逐行高亮跟随；匹配不到会显示「暂无歌词」。</p>
+          <p><b>底部控制条</b>：拖动进度条跳转，音量条直接拖；快退/快进 15 秒、上一首/下一首、循环·单曲·随机都在这一条上。</p>
           <p><b>自动播放</b>：首次进入会用曲目最多的艺人歌单填充队列并尝试播放；若浏览器拦截了自动播放，点一下播放键即可。</p>
-          <p><b>快捷键</b>：拖动底部进度条可跳转，音量条直接拖动调节；上下首、循环/单曲/随机在底部控制条。</p>
+          <p><b>安卓 App</b>：切后台或锁屏后继续播放、并能自动切下一首；锁屏与通知栏有媒体卡片，显示封面与歌名，第二行跟随显示当前歌词；支持上一首 / 播放暂停 / 下一首，蓝牙耳机与车机的按键同样可用。</p>
+          <p><b>背景</b>：移到「设置 → 外观」里了（该功能尚未做完，详见设置页说明）。</p>
           <!-- 安卓壳后台播放的诊断信息：服务起不来时通知栏是空的，
                没有这行就分不清「功能没生效」还是「起来了但通知不显眼」。
                浏览器里恒为空、不显示。 -->
@@ -702,6 +687,14 @@ watch(
   transition: background var(--transition-fast);
 }
 
+/* 位图图标（OpenShop 商店按钮那个购物车）。其余图标都是 15px 的 stroke SVG，
+   这里按高度对齐；宽度自适应 —— 这张是横构图，压成正方形会变形 */
+.home__icon-img {
+  height: 15px;
+  width: auto;
+  display: block;
+}
+
 .home__icon-btn:hover,
 .home__icon-btn--on {
   background: var(--accent);
@@ -749,22 +742,8 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
-/* 背景设置浮层 */
-.home__bg-panel {
-  position: absolute;
-  right: 10px;
-  top: 44px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
-  background: rgba(20, 20, 20, 0.8);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-radius: 6px;
-  z-index: 20;
-}
-
+/* 浮层里的选项按钮。类名还叫 bg-option 是历史遗留 ——
+   背景设置搬去设置页后这里只剩倍速在用，但改名要连模板一起动，先留着 */
 .home__bg-option {
   padding: 5px 16px;
   font-size: 12px;
@@ -1214,7 +1193,12 @@ watch(
      顶部导航和底部播放控制都还露着，不用退出去就能暂停/切歌 */
   .home__player {
     position: fixed;
-    top: calc(var(--topbar-height) + 8px);
+    /* 上沿跟着顶栏的【真实下沿】走（--header-bottom 定义在 variables.css :root）。
+       不用 --topbar-height：顶栏内容是在「--topbar-height + 安全区」的框里垂直
+       居中的，再叠上 --header-drop，实际下沿比 --topbar-height 低约 20px
+       —— 只按 --topbar-height 排，这张深色背景的上沿就会压住标题文字和图标。
+       这样以后改顶栏高度 / 安全区 / 下移量，这里自动跟着走，不必再手调。 */
+    top: calc(var(--header-bottom) + var(--spacing-sm));
     left: var(--page-gutter);
     right: var(--page-gutter);
     bottom: calc(var(--playerbar-height) + 12px);
