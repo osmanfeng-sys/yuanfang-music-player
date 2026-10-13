@@ -16,6 +16,8 @@ const nativeProbe = registerPlugin<{
   ping(): Promise<{ bridge?: string; playing?: boolean; serviceRunning?: boolean }>
   /** 读本机 APK 的版本号；浏览器里插件不存在 → reject（调用处会吞掉） */
   getAppVersion(): Promise<{ versionCode?: number; versionName?: string }>
+  /** 用系统浏览器打开链接。**必须走原生** —— 见 openUpdate() 里的说明 */
+  openExternal(o: { url: string }): Promise<void>
 }>('PlaybackForeground')
 import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
@@ -58,6 +60,9 @@ interface UpdateInfo {
 /** 有新版时非空；同时驱动 ⓘ 按钮上的绿点 */
 const updateInfo = ref<UpdateInfo | null>(null)
 
+/** 点「下载更新」失败时的原因。显示在弹层里，避免又出现"点了没反应"这种查不了的现象 */
+const updateError = ref('')
+
 async function checkUpdate(): Promise<void> {
   try {
     // 本机版本只有原生侧知道。浏览器里没有 APK → 直接不提示
@@ -88,9 +93,33 @@ async function checkUpdate(): Promise<void> {
   }
 }
 
-/** 跳系统浏览器下载。壳里 window.open 会交给浏览器（OpenShop 那个按钮已验证过这条路） */
-function openUpdate() {
-  if (updateInfo.value) window.open(updateInfo.value.url, '_blank')
+/**
+ * 跳系统浏览器下载。
+ *
+ * ⚠️ 这里**必须走原生** openExternal，不能用 window.open —— 实测踩过：
+ *    壳模式下页面和 APK 是**同源**的（都在 yuanfang-music.pages.dev），
+ *    而 Capacitor 的 WebView 只把**站外**链接交给系统浏览器；
+ *    同源链接它当成页内跳转，WebView 自己去加载那个 .apk，
+ *    加载不了又没有下载监听 → 表现就是"点了完全没反应"。
+ *
+ *    旁证：OpenShop 那个购物车按钮用同样的 window.open 就好用 ——
+ *    因为它指向的是另一个域名。
+ *
+ * 浏览器里没有这个插件（reject），退回 window.open —— 网页端本来就是正常的。
+ */
+async function openUpdate() {
+  const info = updateInfo.value
+  if (!info) return
+  const abs = new URL(info.url, location.origin).href
+  updateError.value = ''
+  try {
+    await nativeProbe.openExternal({ url: abs })
+  } catch (e: unknown) {
+    // 浏览器里必然走到这（插件不存在），这是预期；把原因显示出来，
+    // 免得下次又变成"点了没反应"这种没法查的现象
+    updateError.value = e instanceof Error ? e.message : String(e)
+    window.open(abs, '_blank')
+  }
 }
 
 /** 弹层 */
@@ -649,6 +678,7 @@ watch(
             <b>发现新版本 v{{ updateInfo.versionName }}</b>
             <button class="home__update-btn" @click="openUpdate">下载更新</button>
             <span v-if="updateInfo.notes" class="home__update-notes">{{ updateInfo.notes }}</span>
+            <span v-if="updateError" class="home__update-notes">打开失败：{{ updateError }}</span>
           </p>
           <p><b>远方音乐播放器</b> — 自建在线音乐库，音频存放在 Cloudflare R2，按需拉取。</p>
           <p><b>正在播放 / 乐库 / 搜索</b>：三个页签。<b>乐库</b>按音乐夹（R2 一级目录）分组，点进去看该夹全部曲目，点任意一首即以该夹为队列播放；只有直接放在存储桶根目录、不属于任何音乐夹的才归为「未分类」。<b>搜索</b>按歌名或歌手实时过滤全库。</p>

@@ -1,6 +1,8 @@
 package ccwu.yuanfang.music;
 
+import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.net.Uri;
 import android.os.Build;
 
 import com.getcapacitor.Bridge;
@@ -133,6 +135,38 @@ public class PlaybackPlugin extends Plugin {
             ret.put("versionName", "");
         }
         call.resolve(ret);
+    }
+
+    /**
+     * 用系统浏览器打开一个链接（目前只给「下载更新」用）。
+     *
+     * ⚠️ 为什么不能只用网页里的 window.open —— 这是实测出来的：
+     *
+     *   壳模式下页面和 APK 是【同源】的（都在 yuanfang-music.pages.dev）。
+     *   Capacitor 的 WebView 只把【站外】链接交给系统浏览器处理，
+     *   同源链接它当成页内跳转，于是 WebView 自己去加载那个 .apk ——
+     *   加载不了、又没有 DownloadListener，结果就是「点了完全没反应」。
+     *
+     *   旁证：OpenShop 那个按钮同样用 window.open 就好用，因为它指向别的域名。
+     *
+     * 所以这里直接发 ACTION_VIEW，把"交给谁"这件事从 WebView 手里拿回来。
+     */
+    @PluginMethod
+    public void openExternal(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || url.isEmpty()) {
+            call.reject("url is required");
+            return;
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Throwable t) {
+            // 没装浏览器之类的情况：把原因带回去，前端会显示出来
+            call.reject(t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
     }
 
     /**

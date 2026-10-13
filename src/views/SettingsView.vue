@@ -207,7 +207,7 @@ function clearAllData() {
     </section>
 
     <section class="settings__section settings__section--about">
-      <p class="settings__version">远方音乐 v1.1</p>
+      <p class="settings__version">远方音乐 v1.2.2</p>
       <p class="settings__copyright">基于 Vue 3 + Cloudflare 构建</p>
     </section>
   </main>
