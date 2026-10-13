@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -15,11 +16,44 @@ public class MainActivity extends BridgeActivity {
 
     private static final int REQ_NOTIFY = 1;
 
+    /**
+     * 返回键：播放中不销毁 Activity。见 handleOnBackPressed() 里的长注释。
+     *
+     * ⚠️ 用 dispatcher 而不是覆写 onBackPressed()。Capacitor 的 BridgeActivity
+     * 没有覆写返回键，androidx ComponentActivity 的默认实现会走 OnBackPressedDispatcher；
+     * 而 Android 13+ 一旦启用预测性返回，框架**根本不调用 onBackPressed()** ——
+     * 覆写它等于没写（这就是上一版改了却毫无效果的原因）。
+     * dispatcher 这条路两种机制通吃：androidx 会在启用预测性返回时自动把它
+     * 桥接成 OnBackInvokedCallback。
+     */
+    private final OnBackPressedCallback backCallback = new OnBackPressedCallback(true) {
+        @Override
+        public void handleOnBackPressed() {
+            if (PlaybackPlugin.isPlaying()) {
+                // 播放中：挪到后台，与 home 键同语义。
+                // 不能放行 —— 默认行为是 finish 掉 Activity，连带销毁 WebView，
+                // 声音立刻断，而前台服务不依赖 Activity 所以通知还挂着；
+                // 更糟的是 PlaybackPlugin 里静态存着的那个 Bridge 变成指向死 WebView，
+                // 于是通知栏/锁屏的控件全部失灵（用户实测正是这三条）。
+                moveTaskToBack(true);
+                return;
+            }
+            // 没在播：交还默认行为（正常返回上一页 / 退出）。
+            // 先自禁用再转发，避免自己又被调一次造成死循环。
+            setEnabled(false);
+            getOnBackPressedDispatcher().onBackPressed();
+        }
+    };
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // 本地插件必须显式注册（npm 安装的插件才会被自动发现）
         registerPlugin(PlaybackPlugin.class);
         super.onCreate(savedInstanceState);
+
+        // 注册在 super.onCreate 之后：dispatcher 是「后注册的先执行」，
+        // 这样我们排在 Capacitor / androidx 可能注册的任何回调之前
+        getOnBackPressedDispatcher().addCallback(this, backCallback);
 
         // 安卓 13+ 的通知权限**不会自动弹**，必须主动请求。
         // 不请求的话前台服务照跑，但通知栏一片空白，看着像没生效。
@@ -64,26 +98,4 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    /**
-     * 返回键。
-     *
-     * ⚠️ 不覆写的话走 Capacitor 默认行为 —— **finish 掉 Activity**，连带把 WebView
-     * 一起销毁。声音立刻断；但前台服务不依赖 Activity，通知照旧挂着。
-     * 症状因此很有辨识度：**按返回键后停在通知栏、却不播了，必须重开 App 才恢复**。
-     *
-     * 按 home 键走的是 moveTaskToBack（只把任务挪到后台），WebView 活着，所以正常 ——
-     * 用户实测的差别（home 正常 / 返回断音）正好对上这个根因。
-     *
-     * 播放中一律改成「挪到后台」，和 home 键同一个语义，也是音乐类 App 的通行做法。
-     * 没在播时才放行走默认逻辑（正常返回上一页 / 退出）。
-     */
-    @Override
-    @SuppressWarnings("deprecation")
-    public void onBackPressed() {
-        if (PlaybackPlugin.isPlaying()) {
-            moveTaskToBack(true);
-            return;
-        }
-        super.onBackPressed();
-    }
 }
