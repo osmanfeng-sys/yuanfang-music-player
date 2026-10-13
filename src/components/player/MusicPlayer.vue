@@ -172,11 +172,18 @@ onMounted(() => {
 
   ap.on('pause', () => {
     // 队列重建或 next/prev 切换期间忽略 pause，防止闪烁
-    // （切歌时不能退出前台态，否则下一首刚开始 JS 就被冻住）
     if (_ignorePause || playerStore.ignorePause) return
     playerStore.isPlaying = false
     syncMediaSession()
-    setForegroundPlaying(false)
+    // ⚠️ 这里【刻意不】停前台服务。暂停 ≠ 结束。
+    //
+    // 原来 pause 就 stop()，结果 APlayer 在**自动切歌的瞬间**也会触发一次 pause
+    // → 服务被拆掉、通知消失、前台态丢失 → WebView 的 JS 又被冻住。
+    // 症状：解锁屏幕后通知不见了，而且又不能自动切歌了（两个症状同一个根因）。
+    //
+    // 真实音乐 App 也是暂停后通知继续在（可续播），所以服务只在这两种时候停：
+    // 组件卸载（见 onUnmounted）、或用户在界面里显式停止。
+    // 代价：暂停后挂在后台的服务会一直留着，安卓内存吃紧时可能提示，可接受。
   })
 
   ap.on('timeupdate', () => {
@@ -360,6 +367,8 @@ watch(
 )
 
 onUnmounted(() => {
+  // 播放器真正没了，这时候才该退出前台态
+  setForegroundPlaying(false)
   if (ap) {
     ap.destroy()
     ap = null
