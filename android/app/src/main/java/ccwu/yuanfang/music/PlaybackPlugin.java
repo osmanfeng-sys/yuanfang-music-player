@@ -1,5 +1,6 @@
 package ccwu.yuanfang.music;
 
+import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -7,13 +8,18 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * 把「正在播放」这个意图告诉原生，并顺手起一个前台服务。
+ * 网页 ↔ 原生的桥。三个方向各一件事：
+ *
+ *   网页 → 原生   start / stop   置「正在播放」意图，起停前台服务
+ *   网页 → 原生   updateNowPlaying 推当前曲目，喂给锁屏 / 通知栏的媒体卡片
+ *   原生 → 网页   （不在这里）PlaybackService 通过 bridge.eval 回调
+ *                  window.__ymNativeControl(action)
  *
  * ⚠️ 设计要点（踩过坑）：**核心职责和尽力而为的部分必须解耦**。
  *
- *   playing 标志  —— 决定 MainActivity.onPause() 要不要暂停 WebView。
+ *   playing 标志  —— 决定 MainActivity.onPause() 要不要把 WebView 一起暂停。
  *                   这是「后台能自动切歌」的**唯一必要保证**，纯内存操作，不会失败。
- *   PlaybackService —— 只是把进程钉在前台态、降低被系统回收的概率。
+ *   PlaybackService —— 把进程钉在前台态、并承载媒体控件。
  *                   它是加分项，**起不来也不能影响上面那条**。
  *
  *   初版把两者绑在一起（onPause 查 PlaybackService.isRunning()），结果服务一旦起不来，
@@ -23,6 +29,24 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class PlaybackPlugin extends Plugin {
 
     private static volatile boolean playing = false;
+
+    /**
+     * 给 PlaybackService 回调用 —— 服务要往网页里发 JS，但它自己拿不到 Bridge。
+     *
+     * ⚠️ 只在 load() 里【存引用】，**不能在这发 JS**：load() 跑在
+     * webView.loadUrl() 之前（Bridge.java 里 registerAllPlugins 先于 loadWebView），
+     * 那时候页面还是空的，eval 必然落空。
+     */
+    private static volatile Bridge sBridge = null;
+
+    public static Bridge bridge() {
+        return sBridge;
+    }
+
+    @Override
+    public void load() {
+        sBridge = getBridge();
+    }
 
     public static boolean isPlaying() {
         return playing;
@@ -54,6 +78,22 @@ public class PlaybackPlugin extends Plugin {
         } catch (Throwable ignored) {
             // 停不掉也不影响什么
         }
+        call.resolve();
+    }
+
+    /**
+     * 网页推来当前曲目 —— 锁屏 / 通知栏媒体卡片显示的就是这份数据。
+     *
+     * 由 MusicPlayer.vue 的 syncMediaSession() 调用，那个函数本来就在
+     * 播放 / 暂停 / 切歌时都会被触发，所以不需要额外加调用点。
+     */
+    @PluginMethod
+    public void updateNowPlaying(PluginCall call) {
+        String title = call.getString("title", "");
+        String artist = call.getString("artist", "");
+        Boolean playing = call.getBoolean("playing", Boolean.TRUE);
+
+        PlaybackService.updateNowPlaying(title, artist, playing == null || playing);
         call.resolve();
     }
 

@@ -14,6 +14,13 @@ interface PlaybackForegroundPlugin {
   start(): Promise<{ ok?: boolean; note?: string }>
   stop(): Promise<void>
   ping(): Promise<{ bridge?: string; playing?: boolean; serviceRunning?: boolean }>
+  /** 推当前曲目给原生 —— 锁屏 / 通知栏媒体卡片显示的就是这份数据 */
+  updateNowPlaying(o: {
+    title: string
+    artist: string
+    album: string
+    playing: boolean
+  }): Promise<void>
 }
 const PlaybackForeground = registerPlugin<PlaybackForegroundPlugin>('PlaybackForeground')
 
@@ -104,11 +111,34 @@ function getAudioElement(): HTMLAudioElement | null {
 //
 // 所以这一步**不依赖 Capacitor**，是整条 APK 路线里性价比最高的一步。
 
-/** 把当前曲目与播放状态同步给系统媒体中心 */
+/**
+ * 把当前曲目与播放状态同步给系统媒体中心。
+ *
+ * ⚠️ 这里有**两条独立的路**，别并成一条：
+ *   ① 原生壳（安卓）—— 推给 PlaybackService，喂锁屏 / 通知栏的媒体卡片。
+ *      它**不能**走 navigator.mediaSession：WebView 里的 mediaSession 不会注册到
+ *      系统（这正是当初"锁屏没控件"的原因）。
+ *   ② 手机 / 桌面浏览器 —— 走 navigator.mediaSession，浏览器自己接进系统媒体中心。
+ */
 function syncMediaSession() {
-  if (!('mediaSession' in navigator)) return
-
   const track = playerStore.currentTrack
+  const playing = playerStore.isPlaying
+
+  // ① 原生侧。放在最前，且**不受下面 mediaSession 可用性影响** ——
+  //    两条路服务的是不同目标，不该因为浏览器不支持 mediaSession 就连带掐掉原生那条。
+  if (track) {
+    PlaybackForeground.updateNowPlaying({
+      title: track.title,
+      artist: track.artist,
+      album: track.album || track.folder || '',
+      playing
+    }).catch(() => {
+      // 纯浏览器里插件不存在，必然 reject —— 这是预期，安静吞掉
+    })
+  }
+
+  // ② 网页侧
+  if (!('mediaSession' in navigator)) return
   if (!track) {
     navigator.mediaSession.metadata = null
     return
@@ -124,7 +154,7 @@ function syncMediaSession() {
     album: track.album || track.folder || '',
     artwork: [{ src: cover, sizes: '320x320', type: 'image/jpeg' }]
   })
-  navigator.mediaSession.playbackState = playerStore.isPlaying ? 'playing' : 'paused'
+  navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
 }
 
 /** 注册锁屏上的那几个控制按钮 */
@@ -166,8 +196,11 @@ onMounted(() => {
 
   ap.on('play', () => {
     playerStore.isPlaying = true
-    syncMediaSession()
+    // ⚠️ 顺序不能换：先起服务，再同步曲目。
+    // 反过来 updateNowPlaying 会赶在服务 onCreate 之前到（那边 instance 还是 null），
+    // 那一次推送被丢弃 —— 表现为「锁屏卡片要等到下次切歌才有歌名」。
     setForegroundPlaying(true)
+    syncMediaSession()
   })
 
   ap.on('pause', () => {
@@ -254,6 +287,30 @@ onMounted(() => {
   })
 
   initMediaSession()
+
+  // ─── 原生 → 网页：锁屏 / 通知栏按钮的落点 ───
+  //
+  // PlaybackService 的 MediaSession.Callback 通过 Bridge.eval 调这里。
+  //
+  // ⚠️ 必须走 store 的 next() / prev()，**不能**直接改 currentIndex：
+  //    只有 list.switch() 才会真的换声音、并触发 listswitch 回写索引；
+  //    直接改索引会让 currentTrack 与实际声音脱节（歌名变了但还在放上一首）。
+  //    这正是 store 里 next()/prev() 绕那一圈的用意。
+  //
+  // 放在 MusicPlayer 而不是 main.ts：控件是播放器的事。没有播放器就没有可控制的对象
+  // （store 的 next() 也会因 aplayerInstance 为空自行 no-op）。
+  ;(window as any).__ymNativeControl = (action: string) => {
+    if (action === 'play') {
+      // 加状态判断，免得系统发 play 时我们反而把正在播的暂停了
+      if (!playerStore.isPlaying) playerStore.togglePlay()
+    } else if (action === 'pause') {
+      if (playerStore.isPlaying) playerStore.togglePlay()
+    } else if (action === 'next') {
+      playerStore.next()
+    } else if (action === 'prev') {
+      playerStore.prev()
+    }
+  }
 
   // 页面加载就探一次原生桥，不依赖播放。
   // ⚠️ 这里【不吞】"插件未实现"类错误 —— 那一句正是我们要的答案。
@@ -367,6 +424,8 @@ watch(
 )
 
 onUnmounted(() => {
+  // 撤掉给原生的入口，免得服务回调到一个已销毁的页面上
+  delete (window as any).__ymNativeControl
   // 播放器真正没了，这时候才该退出前台态
   setForegroundPlaying(false)
   if (ap) {
