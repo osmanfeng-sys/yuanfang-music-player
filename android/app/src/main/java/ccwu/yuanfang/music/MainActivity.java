@@ -63,4 +63,27 @@ public class MainActivity extends BridgeActivity {
             }
         }
     }
+
+    /**
+     * 返回键。
+     *
+     * ⚠️ 不覆写的话走 Capacitor 默认行为 —— **finish 掉 Activity**，连带把 WebView
+     * 一起销毁。声音立刻断；但前台服务不依赖 Activity，通知照旧挂着。
+     * 症状因此很有辨识度：**按返回键后停在通知栏、却不播了，必须重开 App 才恢复**。
+     *
+     * 按 home 键走的是 moveTaskToBack（只把任务挪到后台），WebView 活着，所以正常 ——
+     * 用户实测的差别（home 正常 / 返回断音）正好对上这个根因。
+     *
+     * 播放中一律改成「挪到后台」，和 home 键同一个语义，也是音乐类 App 的通行做法。
+     * 没在播时才放行走默认逻辑（正常返回上一页 / 退出）。
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        if (PlaybackPlugin.isPlaying()) {
+            moveTaskToBack(true);
+            return;
+        }
+        super.onBackPressed();
+    }
 }
