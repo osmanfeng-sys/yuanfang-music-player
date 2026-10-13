@@ -9,6 +9,12 @@ import ErrorMessage from '@/components/common/ErrorMessage.vue'
 import { formatTime } from '@/utils/format'
 import { loadLyrics } from '@/services/lyrics'
 import { currentUserId } from '@/utils/userKey'
+import { registerPlugin } from '@capacitor/core'
+
+/** 与 MusicPlayer.vue 同一个本地插件；registerPlugin 幂等，两处各注册一次没问题 */
+const nativeProbe = registerPlugin<{
+  ping(): Promise<{ bridge?: string; playing?: boolean; serviceRunning?: boolean }>
+}>('PlaybackForeground')
 import AddToPlaylistModal from '@/components/playlist/AddToPlaylistModal.vue'
 import { prefetchHlsSegments } from '@/services/prefetch'
 import type { Track } from '@/types'
@@ -82,6 +88,29 @@ function seedQueue() {
 }
 
 onMounted(async () => {
+  // ===== 原生桥探针 =====
+  //
+  // ⚠️ 必须放在【一定会挂载】的组件里。原来放在 MusicPlayer.vue，而它在
+  //    AppFooter 的 `<template v-else>` 中 —— 没有当前曲目时压根不挂载，
+  //    于是"不依赖播放的探针"反而变成了必须有曲目才发得出去。
+  //    首页是打开就有的，放这里才是真的不依赖播放。
+  //
+  // 先同步写一句再发请求：这样"连这句都没有"本身就能证明代码没跑到，
+  // 而不是被异步吞掉。
+  playerStore.foregroundNote = '探针已发出，等待原生响应…'
+  nativeProbe
+    .ping()
+    .then((r) => {
+      playerStore.foregroundNote =
+        `原生桥连通（bridge=${r?.bridge ?? '?'}，前台服务=${r?.serviceRunning ? '运行中' : '未运行'}）`
+    })
+    .catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e)
+      playerStore.foregroundNote = /not implemented|not available|not found/i.test(msg)
+        ? '★ 原生桥未连通：Capacitor 找不到 PlaybackForeground 插件（未注册）'
+        : `原生桥调用失败：${msg}`
+    })
+
   // 支持 `/?tab=playing|playlist|search` 直接落在指定页签
   // （歌单详情页的「正在播放」按钮靠它跳过来）
   const wanted = route.query.tab

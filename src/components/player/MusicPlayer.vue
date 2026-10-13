@@ -13,6 +13,7 @@ import type { PlayMode } from '@/types'
 interface PlaybackForegroundPlugin {
   start(): Promise<{ ok?: boolean; note?: string }>
   stop(): Promise<void>
+  ping(): Promise<{ bridge?: string; playing?: boolean; serviceRunning?: boolean }>
 }
 const PlaybackForeground = registerPlugin<PlaybackForegroundPlugin>('PlaybackForeground')
 
@@ -246,6 +247,20 @@ onMounted(() => {
   })
 
   initMediaSession()
+
+  // 页面加载就探一次原生桥，不依赖播放。
+  // ⚠️ 这里【不吞】"插件未实现"类错误 —— 那一句正是我们要的答案。
+  PlaybackForeground.ping()
+    .then((r) => {
+      playerStore.foregroundNote =
+        `原生桥连通（bridge=${r?.bridge ?? '?'}，前台服务=${r?.serviceRunning ? '运行中' : '未运行'}）`
+    })
+    .catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e)
+      playerStore.foregroundNote = /not implemented|not available|not found/i.test(msg)
+        ? '★ 原生桥未连通：Capacitor 找不到 PlaybackForeground 插件（未注册）'
+        : `原生桥调用失败：${msg}`
+    })
 })
 
 // ─── Store → APlayer（响应 Store 变化控制播放器）───
