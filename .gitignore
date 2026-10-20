@@ -48,3 +48,6 @@ check/
 android/keystore.properties
 android/*.jks
 android/*.keystore
+
+# 会话原始记录（含运维细节，仓库是公开的，不入库）
+history/
